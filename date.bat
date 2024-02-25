@@ -1,0 +1,2 @@
+@ECHO OFF
+echo GMT+0000

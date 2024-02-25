@@ -1,0 +1,2 @@
+class LinkedHashMap(object):
+    pass

@@ -1,0 +1,12 @@
+{
+  "data": {
+    "accessControl": {
+      "switch": {
+        "primaryGateway": "10.8.255.17",
+        "secondaryGateway": null,
+        "sharedSecret": "radius",
+        "radiusAccountingEnabled": true
+      }
+    }
+  }
+}
