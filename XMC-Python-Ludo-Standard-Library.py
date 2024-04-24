@@ -61,7 +61,7 @@ __version__ = '0.1'
 
 
 ##########################################################
-# Ludo Standard library; Version 4.04                    #
+# Ludo Standard library; Version 4.05                    #
 # Written by Ludovico Stevens, TME Extreme Networks      #
 ##########################################################
 Debug = False    # Enables debug messages
@@ -154,22 +154,40 @@ def setFamily(cliDict={}, family=None): # v3 - Set global Family variable; autom
 
 
 #
-# CLI Rollback functions
-# v3
-RollbackStack = []
+# CLI/SNMP Rollback functions
+# v4
+RollbackStack = [] # Format [ ['cli', <command>], ['snmp', [requestDict, instance, oldValue], ...]]
 
-def rollbackStack(): # v1 - Execute all commands on the rollback stack
+def rollbackStack(): # v2 - Execute all commands on the rollback stack
     if RollbackStack:
-        print "Applying rollback commands to undo partial config and return device to initial state"
+        print "\nApplying rollback commands to undo partial config and return device to initial state"
         while RollbackStack:
-            sendCLI_configChain(RollbackStack.pop(), True)
+            cfgType, data = RollbackStack.pop()
+            if cfgType == 'cli':
+                sendCLI_configChain(data, returnCliError=True)
+            elif cfgType == 'snmp':
+                snmpSet(data[0], instance=data[1], value=data[2], returnError=True)
+            else:
+                print "Invalid rollback stack data entry: {}".format(cfgType)
 
-def rollbackCommand(cmd): # v1 - Add a command to the rollback stack; these commands will get popped and executed should we need to abort
-    RollbackStack.append(cmd)
+def rollbackCommand(cmd): # v2 - Add a command to the rollback stack; these commands will get popped and executed should we need to abort
+    global RollbackStack
+    RollbackStack.append(['cli', cmd])
     cmdList = map(str.strip, re.split(r'[;\n]', cmd)) # cmd could be a configChain
     cmdList = [x for x in cmdList if x] # Weed out empty elements 
     cmdOneLiner = " / ".join(cmdList)
-    print "Pushing onto rollback stack: {}\n".format(cmdOneLiner)
+    print "Pushing onto rollback stack CLI: {}\n".format(cmdOneLiner)
+
+def rollbackSnmp(requestDict, instance, oldValue): # v1 - Add SNMP request to rollback stack
+    # These commands will get popped and executed as snmpSet should we need to abort
+    global RollbackStack
+    RollbackStack.append(['snmp', [requestDict, instance, oldValue]])
+    oidList, instList, _, valueList = snmpInputLists("rollbackSnmp", requestDict, instance, oldValue)
+    print "Pushing onto rollback stack SNMP:"
+    for inOid, inst, currVal in zip(oidList, instList, valueList):
+        displayOid, oid = separateOid(inOid)
+        setOid = '.'.join([oid, str(inst)]) if inst != None else oid
+        print " - {}{} revert to {}".format(displayOid, setOid, currVal)
 
 def rollBackPop(number=0): # v1 - Remove entries from RollbackStack
     global RollbackStack
@@ -1768,28 +1786,931 @@ def parseIfElseBlocks(config): # v1 - Parses config for embedded #if/#elseif/#el
 
 
 #
-# INIT: Init Debug & Sanity flags based on input combos
+# SNMP functions - (use of rollback requires rollback functions)
+# v2
+import re
+from xmclib.snmplib import SnmpRequest
+from xmclib.snmplib import SnmpVarbind
+from xmclib.snmplib import ASN_INTEGER, ASN_OCTET_STR, ASN_OCTET_STR_DEC, ASN_OCTET_STR_HEX, ASN_OCTET_STR_PRINTABLE, \
+                           ASN_OBJECT_ID, ASN_IPADDRESS, ASN_COUNTER, ASN_UNSIGNED, ASN_GAUGE, ASN_TIMETICKS, ASN_COUNTER64, \
+                           ASN_OPAQUE_FLOAT, ASN_OPAQUE_DOUBLE, ASN_OPAQUE_U64, ASN_OPAQUE_I64
+SnmpTarget = None
+SnmpTimeout = 3
+SnmpRetries = 3
+LastSnmpError = None
+
+def snmpTarget(ipAddress=emc_vars["deviceIP"], timeout=None, retries=None): # v1 - Sets SNMP target IP
+    global SnmpTarget
+    SnmpTarget = SnmpRequest(ipAddress)
+    if timeout:
+        global SnmpTimeout
+        SnmpTimeout = timeout
+    if retries:
+        global SnmpRetries
+        SnmpRetries = retries
+
+
+def separateOid(inOid): # v1 - Separates the OID name from the OID value
+    if re.search(r':', inOid):
+        displayOid, oid = map(str.strip, inOid.split(':', 1))
+        displayOid += ':'
+    else:
+        displayOid = ''
+        oid = inOid
+    return displayOid, oid
+
+
+def snmpInputLists(caller, requestDict, instance=None, value=None): # v1 - Validate inputs and prepare input lists
+    if not SnmpTarget:
+        exitError("{}() cannot be called without first setting up an SNMP target with snmpTarget()".format(caller))
+    if not requestDict:
+        exitError("{}() no request dictionary definition supplied".format(caller))
+
+    if caller in ('snmpSet', 'snmpCheckSet') and value == None:
+        if 'set' in requestDict:
+            value = requestDict['set']
+        else:
+            exitError("{}() no value to set".format(caller))
+
+    if isinstance(requestDict['oid'], str): # If a string.. i.e. single OID
+        if isinstance(requestDict['asn'], list):
+            exitError("{}() single OID provided but list of {} ASN types".format(caller, len(requestDict['asn'])))
+        if isinstance(instance, list):
+            oidList = [requestDict['oid']] * len(instance) # Make it a list of same size as instances with all the same OID value
+            asnList = [requestDict['asn']] * len(instance) # Do the same for ASN types
+        else:
+            oidList = [requestDict['oid']] # Make it a 1 element list
+            asnList = [requestDict['asn']] # Do the same for ASN type
+    else:
+        oidList = requestDict['oid']
+
+    if isinstance(requestDict['asn'], list): # List of ASN types provided
+        if len(requestDict['asn']) != len(oidList):
+            exitError("{}() supplied list of {} OIDs but list of {} ASN types".format(caller, len(oidList), len(requestDict['asn'])))
+        asnList = requestDict['asn']
+
+    if instance == None:
+        instList = [None] * len(oidList)
+    elif isinstance(instance, list): # List of instances provided
+        if len(instance) != len(oidList):
+            exitError("{}() supplied list of {} OIDs but list of {} instances".format(caller, len(oidList), len(instance)))
+        instList = instance
+    else: # Single instance provided
+        instList = [instance] * len(oidList) # Make a list of same size as OIDs with all the same value
+
+    if value == None:
+        valueList = []
+    if isinstance(value, list): # List of values provided
+        if len(value) != len(oidList):
+            exitError("{}() supplied list of {} OIDs but list of {} values".format(caller, len(oidList), len(value)))
+        for val in value:
+            if 'map' in requestDict and val in requestDict['map']:
+                valueList.append(requestDict['map'][value])
+            else:
+                valueList.append(val)
+    else: # Single value provided
+        if 'map' in requestDict and value in requestDict['map']:
+            valueList = [requestDict['map'][value]] * len(oidList) # Make a list of same size as OIDs with all the same value
+        else:
+            valueList = [value] * len(oidList) # Make a list of same size as OIDs with all the same value
+
+    debug("{} snmpInputLists:\n - oidList = {}\n - instList = {}\n - asnList = {}\n - valueList = {}".format(caller, oidList, instList, asnList, valueList))
+    return oidList, instList, asnList, valueList
+
+
+def snmpGet(requestDict, instance=None, timeout=None, retries=None, debugVal=None, returnError=False): # v2 - Performs SNMP get
+    # RequestDict oid key can be a single OID, or it can be a list of OIDs
+    # If a list of OIDs, then instance can either be a single value or a list
+    #    - if single instance, then the instance will be applied to all OIDs
+    #    - if list of instances, then these need to be of same size as the list of OIDs
+    # If a single OID, then instance can again either be a single value or a list
+    # Returns either single value (for single OID)
+    # or a list of values (for multiple OIDs) in same order
+
+    global LastSnmpError
+
+    # Validate and prepare input lists
+    oidList, instList, _, _ = snmpInputLists("snmpGet", requestDict, instance)
+
+    # Prepare SNMP varbinds
+    varbinds = []
+    for inOid, inst in zip(oidList, instList):
+        displayOid, oid = separateOid(inOid)
+        getOid = '.'.join([oid, str(inst)]) if inst != None else oid
+        varbinds.append(SnmpVarbind(oid=getOid))
+        debug("snmpGet request {}{}".format(displayOid, getOid))
+    timeout = timeout if timeout else SnmpTimeout
+    retries = retries if retries else SnmpRetries
+
+    # Perform SNMP request
+    response = SnmpTarget.snmp_get(varbinds, timeout=timeout, retries=retries)
+    if response.ok:
+        LastSnmpError = None
+        retValue = []
+        for binding in response.vars:
+            retValue.append(binding.val)
+            debug("snmpGet response {} = {}".format(binding.var, binding.val))
+        if len(retValue) == 1:
+            retValue = retValue[0]
+        if debugVal:
+            debug("snmpGet response {} = {}".format(debugVal, retValue))
+        else:
+            debug("snmpGet response retValue = {}".format(retValue))
+        return retValue
+
+    # In case of error
+    if returnError: # If we asked to return upon SNMP error, then the error message will be held in LastSnmpError
+        LastSnmpError = response.error
+        return None
+    abortError("snmpGet for\n{}".format(requestDict['oid']), response.error)
+
+
+def snmpWalk(requestDict, timeout=None, retries=None, returnError=False): # v2 - Performs SNMP walk
+    # RequestDict oid key can be a single OID, or it can be a list of OIDs
+    # Returns a dict with format:
+    # {
+    #     instance1: {oid1: value, oid2: value, ...},
+    #     instance2: {oid1: value, oid2: value, ...},
+    #     ...
+    # }
+
+    global LastSnmpError
+
+    # Validate and prepare input lists
+    oidList, _, _, _ = snmpInputLists("snmpWalk", requestDict)
+
+    # Prepare SNMP varbinds
+    varbinds = []
+    for inOid in oidList:
+        displayOid, oid = separateOid(inOid)
+        varbinds.append(SnmpVarbind(oid=oid))
+        debug("snmpWalk request {}{}".format(displayOid, oid))
+    timeout = timeout if timeout else SnmpTimeout
+    retries = retries if retries else SnmpRetries
+
+    # Perform SNMP request
+    response = SnmpTarget.snmp_get_next(varbinds, timeout=timeout, retries=retries)
+    if response.ok:
+        LastSnmpError = None
+        if Debug:
+            for instance in response.data:
+                for oid in response.data[instance]:
+                    debug("snmpWalk response {} = {}".format(oid, response.data[instance][oid]))
+        return response.data
+
+    # In case of error
+    if returnError: # If we asked to return upon SNMP error, then the error message will be held in LastSnmpError
+        LastSnmpError = response.error
+        return None
+    abortError("snmpGetNext for\n{}".format(requestDict['oid']), response.error)
+
+
+def snmpSet(requestDict, instance=None, value=None, timeout=None, retries=None, returnError=False): # v2 - Performs SNMP set
+    # RequestDict oid key can be a single OID, or it can be a list of OIDs
+    # If a list of OIDs, then instance, ASN & value can either be a single value or lists
+    #    - if single value, then the instance|ASN|value will be applied to all OIDs
+    #    - if list of values, then these need to be of same size as the list of OIDs
+    # If a single OID, then instance can again either be a single value or a list
+    #    - if instance is a list, then values can also be a list, but of same length
+
+    global LastSnmpError
+    if Sanity:
+        print "SANITY - SNMP Set:"
+    else:
+        print "SNMP Set:"
+
+    # Validate and prepare input lists
+    oidList, instList, asnList, valueList = snmpInputLists("snmpSet", requestDict, instance, value)
+
+    # Prepare SNMP varbinds
+    varbinds = []
+    for inOid, inst, asn, val in zip(oidList, instList, asnList, valueList):
+        displayOid, oid = separateOid(inOid)
+        setOid = '.'.join([oid, str(inst)]) if inst != None else oid
+        print " - {}{} = {}".format(displayOid, setOid, val)
+        varbinds.append(SnmpVarbind(oid=setOid, asn_type=asn, value=str(val)))
+        debug("snmpSet request {}{} = {}".format(displayOid, setOid, val))
+    if Sanity:
+        LastNbiError = None
+        return True
+    timeout = timeout if timeout else SnmpTimeout
+    retries = retries if retries else SnmpRetries
+
+    # Perform SNMP request
+    response = SnmpTarget.snmp_set(varbinds, timeout=timeout, retries=retries)
+    valueSetFlag = True # Assume all good
+    if response.ok:
+        for binding, val in zip(response.vars, valueList): # Then check
+            debug("snmpSet response {} = {}".format(binding.var, binding.val))
+            if binding.val != str(val):
+                valueSetFlag = False
+        if valueSetFlag: # All good
+            LastSnmpError = None
+            return True
+        # Else fall through
+
+    # In case of error
+    LastSnmpError = "Values not set as expected" if not valueSetFlag else response.error
+    if returnError: # If we asked to return upon SNMP error, then the error message will be held in LastSnmpError
+        return False
+    abortError("snmpSet for\n{}".format(requestDict['oid']), LastSnmpError)
+
+
+def snmpCheckSet(requestDict, instance=None, value=None, timeout=None, retries=None, returnError=False, returnNoSuchObj=True, rollback=False): # v1 - Performs SNMP set based on get value
+    # Essentially same as snmpSet(), except that snmpGet() is first called to check whether the OID(s) are writable and if they are already set to same value
+    # So an snmpSet() is only performed if the OID is writeable and the OID is not currently set to the desired value
+    # Also implements rollback: in case of workflow failure, OID wich were set, are restored to their initial values
+    # RequestDict oid key can be a single OID, or it can be a list of OIDs
+    # If a list of OIDs, then instance, ASN & value can either be a single value or lists
+    #    - if single value, then the instance|ASN|value will be applied to all OIDs
+    #    - if list of values, then these need to be of same size as the list of OIDs
+    # If a single OID, then instance can again either be a single value or a list
+    #    - if instance is a list, then values can also be a list, but of same length
+
+    print "SNMP Check:"
+
+    # Validate and prepare input lists
+    oidList, instList, asnList, valueList = snmpInputLists("snmpCheckSet", requestDict, instance, value)
+
+    # Get current value of OID(s)
+    currentValue = snmpGet(requestDict, instance=instance, timeout=timeout, retries=retries, returnError=True)
+
+    # In list format
+    if isinstance(currentValue, (str, unicode)): # If a string.. i.e. single value
+        currValueList = [currentValue] # Make it a 1 element list
+    else: # Is a list, make copy
+        currValueList = currentValue
+
+    noSuchObjFlag = False
+    sameValueFlag = True
+    for inOid, inst, currVal, val in zip(oidList, instList, currValueList, valueList):
+        displayOid, oid = separateOid(inOid)
+        setOid = '.'.join([oid, str(inst)]) if inst != None else oid
+        print " - {}{} = {}".format(displayOid, setOid, currVal)
+        if re.match(r'No Such Object', currVal): # OID not supported on device
+            noSuchObjFlag = True
+        elif currVal != str(val): # OID not set to desired value
+            sameValueFlag = False
+        else: # OID already set to desired value(s); nothing to do
+            debug("snmpCheckSet already-set {}{} = {}".format(displayOid, setOid, val))
+
+    if noSuchObjFlag:
+        if returnNoSuchObj: # Ignore (note, enough to get No Such object on one OID, and all OIDs will be skipped)
+            return False
+        else: # Bomb
+            abortError("snmpCheckSet for\n{}".format(requestDict['oid']), "No Such Object")
+
+    if sameValueFlag: # Values already set as desired
+        return True
+
+    else: # We need to set desired value(s)
+        snmpSet(requestDict, instance=instance, value=value, timeout=timeout, retries=retries, returnError=returnError)
+        if rollback:
+            rollbackSnmp(requestDict, instance, currentValue)
+
+
+
+
+
+
+
+
+
+
 #
-try:
-    if emc_vars['userInput_sanity'].lower() == 'enable':
-        Sanity = True
-    elif emc_vars['userInput_sanity'].lower() == 'disable':
-        Sanity = False
-except:
-    pass
-try:
-    if emc_vars['userInput_debug'].lower() == 'enable':
-        Debug = True
-    elif emc_vars['userInput_debug'].lower() == 'disable':
-        Debug = False
-except:
-    pass
+# Other Custom Functions
+#
+
+def extractVistData(): # v1 - Tricky command to extract from, as it is different across VOSS, VSP8600 and XA
+    # Only supported for family = 'VSP Series'
+    data = sendCLI_showRegex(CLI_Dict[Family]['get_virtual_ist_data'])
+    dataDict = {}
+    dataDict['vlan']  = data[0][0] if data else None
+    dataDict['state'] = data[0][1] if data else None
+    dataDict['role']  = data[1][2] if data else None
+    debug("extractVistData() = {}".format(dataDict))
+    return dataDict
+
+def compareIsisSysId(selfId, peerId): # v1 - Returns TRUE if selfId < peerId
+    selfId = int(selfId.replace('.', ''), 16) # Convert from hex
+    peerId = int(peerId.replace('.', ''), 16) # Convert from hex
+    if selfId < peerId:
+        return True
+    return False
+
+def compareMacIsisSysId(chassisMac, isisSysId): # v1 - Determines whether the ISIS System ID was user assigned or is derived from chassis MAC
+    chassisMac = chassisMac.replace(':', '')[0:10] #94:9b:2c:b4:74:00 ==> 949b2cb474
+    isisSysId  = isisSysId.replace('.', '')[0:10]  #949b.2cb4.7484    ==> 949b2cb474
+    result = (chassisMac == isisSysId)
+    debug("compareMacIsisSysId() = {}".format(result))
+    return result
+
+def determineIstRole(selfId, peerId): # v1 - Determines role of switch in SMLT Cluster
+    if compareIsisSysId(selfId, peerId):
+        role = 'Primary'
+    else:
+        role = 'Secondary'
+    debug("determineIstRole() = {}".format(role))
+    return role
+
+def allocateSmltVirtBmac(role, selfId, peerId, takenBmacs): # v1 - Given the SysId of the primary vIST node, cycles last byte until it finds a BMAC not in the list provided 
+    baseId = selfId if role == 'Primary' else peerId
+    baseId = baseId.replace('.', '') #949b.2cb4.7484    ==> 949b2cb47484
+    baseMac = ':'.join(re.findall(r'[\da-f]{2}', baseId[:-2])) # All but last hex byte ==> 94:9b:2c:b4:74
+    initLastByte = int(baseId[-2:], 16) # decimal of hex 84
+    lastByte = initLastByte
+    direction = 1 # We try and increment it
+    while 1: # Until we find a unique Bmac
+        if lastByte == 255: # If we reach 0xff, we need to search decrementing
+            direction = -1
+            lastByte = initLastByte # We go the other way
+        elif direction == -1 and lastByte == 0: # Bad sign..
+            exitError('allocateSmltVirtBmac(): unable to allocate smlt-virt-bmac in range {}:xx'.format(baseMac))
+        byteValue = lastByte + direction
+        smltVirtBmac = "{}:{:02x}".format(baseMac, byteValue)
+        if smltVirtBmac not in takenBmacs:
+            break
+        lastByte = byteValue
+    debug("allocateSmltVirtBmac() = {}".format(smltVirtBmac))
+    return smltVirtBmac
+
+def allocateIstVlan(selfList, peerList): # v1 - Given a list of already used VLANs in 4k range, allocates the vIST VLAN
+    step = 1 if IstVLANrange[0] < IstVLANrange[1] else -1
+    istVlan = None
+    for vlan in range(IstVLANrange[0], IstVLANrange[1], step):
+        if str(vlan) not in selfList and str(vlan) not in peerList:
+            istVlan = vlan
+            break
+    if not istVlan:
+        exitError('allocateIstVlan(): unable to allocate available vIST VLAN in range {}-{}'.format(IstVLANrange[0], IstVLANrange[1]))
+    debug("allocateIstVlan() = {}".format(istVlan))
+    return istVlan
+
+def allocateIstMltId(selfList, peerList): # v1 - Given a list of already used MLT ids, allocates the vIST MLT id
+    step = 1 if IstMLTrange[0] < IstMLTrange[1] else -1
+    istMltId = None
+    for mltid in range(IstMLTrange[0], IstMLTrange[1], step):
+        if str(mltid) not in selfList and str(mltid) not in peerList:
+            istMltId = mltid
+            break
+    if not istMltId:
+        exitError('allocateIstMltId(): unable to allocate available vIST MLT id in range {}-{}'.format(IstMLTrange[0], IstMLTrange[1]))
+    debug("allocateIstMltId() = {}".format(istMltId))
+    return istMltId
+
+def allocateClusterId(role, selfNickname, peerNickname): # v1 - Allocates a DVR Leaf Cluster Id by taking the last 9 bits of the Primary node's nickname
+    nickname = selfNickname if role == 'Primary' else peerNickname
+    nicknumber = int(nickname.replace('.', ''), 16)
+    clusterId = nicknumber & 0x1ff # Cluster-id 1-1000 = last 9bits of primary nickname
+    debug("allocateClusterId() = {}".format(clusterId))
+    return clusterId
+
+def allocateIstIsid(role, selfNickname, peerNickname): # v1 - Allocates a vIST I-SID by taking the last 19 bits of the Primary node's nickname
+    nickname = selfNickname if role == 'Primary' else peerNickname
+    nicknumber = int(nickname.replace('.', ''), 16)
+    vistIsid = VistIsidOffset + (nicknumber & 0x7ffff) # IST I-SID (15000000 + last 19bits of Primary Nickname)  
+    debug("allocateIstIsid() = {}".format(vistIsid))
+    return vistIsid
+
+def allocateIstIP(role, selfNickname, peerNickname): # v3 - Allocates the vIST IP by taking 192.168.255.X/30 with last 6bits of Secondary's nickname
+    nickname = peerNickname if role == 'Primary' else selfNickname
+    nicknumber = int(nickname.replace('.', ''), 16)
+    ipSubnet = ipToNumber(VistIPbase[0]) + ((nicknumber & 0x3f) << 2)
+    ipNumber1 = ipSubnet + 1
+    ipNumber2 = ipSubnet + 2
+    istIp1 = numberToIp(ipNumber1)
+    istIp2 = numberToIp(ipNumber2)
+    istSubnet = (numberToIp(ipSubnet), VistIPbase[1]) # IP/Mask
+    istIPself = istIp2 if role == 'Primary' else istIp1 # Here we ensure Master = Primary
+    istIPpeer = istIp1 if role == 'Primary' else istIp2 # Here we ensure Master = Primary
+    debug("allocateIstIP() subnet = {} / self = {} / peer = {}".format(istSubnet, istIPself, istIPpeer))
+    return istSubnet, istIPself, istIPpeer
+
+def allocateMltIds(offsetId, numberOfMlts, inUseList1, inUseList2=[]): # v1 - Given the list of in use MLTs from both vIST peers, provides a list of free MLT ids to use
+    mltList = []
+    mltid = offsetId
+    while 1:
+        if str(mltid) not in inUseList1 and str(mltid) not in inUseList2:
+            mltList.append(str(mltid))
+        if len(mltList) == numberOfMlts:
+            break
+        mltid += 1
+    debug("allocateMltIds() = {}".format(mltList))
+    return mltList
+
+def allocateMltId(offsetId, inUseList1, inUseList2=[]): # v1 - Given the list of in use MLTs from both vIST peers, provides a list of free MLT ids to use
+    allocatedMltid = None
+    mltid = offsetId
+    while 1:
+        if str(mltid) not in inUseList1 and str(mltid) not in inUseList2:
+            allocatedMltid = mltid
+            break
+        mltid += 1
+    debug("allocateMltId() = {}".format(allocatedMltid))
+    return allocatedMltid
+
+def extractMltData(include=[]): # v2 - Extract MLT data: optionally include = ['fa', 'vlacp', 'lacp-extra']
+    # Only supported for family = 'VSP Series'
+    data = sendCLI_showRegex(CLI_Dict[Family]['get_mlt_data'])
+    mltDict = {}
+    mltPortDict = {}
+    for tpl in data:
+        if tpl[0]:
+            mltDict[tpl[0]] = {'type': tpl[1], 'ports': tpl[2]}
+        elif tpl[3]:
+            mltDict[tpl[3]]['lacp'] = tpl[4]
+        elif tpl[5]:
+            mltDict[tpl[5]]['flex'] = tpl[6]
+    for mltid in mltDict:
+        for port in generatePortList(mltDict[mltid]['ports']):
+            mltPortDict[port] = mltid
+
+    if mltDict:
+        if 'fa' in include:
+            data = sendCLI_showRegex(CLI_Dict[Family]['list_fa_mlts'])
+            for mltid in mltDict:
+                mltDict[mltid]['fa'] = bool(mltid in data)
+        if 'vlacp' in include:
+            for mltid in mltDict:
+                mltDict[mltid]['vlacp'] = False
+            data = sendCLI_showRegex(CLI_Dict[Family]['list_vlacp_ports'].format(generatePortRange(mltPortDict.keys())))
+            for port in data:
+                if data[port] == 'true' and port in mltPortDict:
+                    mltDict[mltPortDict[port]]['vlacp'] = True
+        if 'lacp-extra' in include:
+            for mltid in mltDict:
+                mltDict[mltid]['key'] = None
+            mltKey = sendCLI_showRegex(CLI_Dict[Family]['list_mlt_lacp_key'])
+            portKey = sendCLI_showRegex(CLI_Dict[Family]['list_port_lacp_key'])
+            for mltid in mltKey:
+                mltDict[mltid]['key'] = mltKey[mltid]
+                matchingKeyPortList = [x for x in portKey if portKey[x] == mltKey[mltid]]
+                # This overwrites the ports, but at least we get in there all ports configured with matching LACP key (not just ports active in MLT LAG)
+                mltDict[mltid]['ports'] = generatePortRange(matchingKeyPortList)
+
+    debug("extractMltData() = {}".format(mltDict))
+    return mltDict, mltPortDict
+
+def findUnusedPorts(mltPortDict={}): # v1 - This functions returns a list of "default" ports, i.e. unconfigured ports
+    # Only supported for family = 'VSP Series'
+    # A port is considered here to be default if it is untagged and only member of VLAN 1 or no VLAN at all (this already excludes ISIS ports)
+    # The up/down state of the port is intentionally not considered here (a default port can be already enabled)
+    # Checks are also made to ensure that the returned port list does not contain any:
+    # - Brouter ports
+    # - MLT ports:  In some scripts MLT data needs extracting in greater depth than what needed here; in which case
+    #               an already populated mltPortDict can be supplied; see function extractMltData()
+    vlanDefaultPorts = sendCLI_showRegex(CLI_Dict[Family]['list_vlan_default_ports'], 'vlanDefaultPorts')
+    brouterPorts = sendCLI_showRegex(CLI_Dict[Family]['list_brouter_ports'], 'brouterPorts')
+    if not mltPortDict:
+        mltPortDict = extractMltData(['lacp-extra'])[1] # We just fetch the basic MLT data + lacp enabled ports
+    defaultPorts = [x for x in vlanDefaultPorts if x not in brouterPorts and x not in mltPortDict]
+    debug("findUnusedPorts() = {}".format(defaultPorts))
+    return defaultPorts
+
+def extractFAelements(newPortList): # v1 - Extracts data from show fa elements
+    # Dump FA element tables
+    data = sendCLI_showRegex(CLI_Dict[Family]['list_fa_elements'])
+    dataDict = {}
+    for tpl in data:
+        if Family in ['VSP Series', 'ERS Series']:
+            if tpl[0]:
+                elType = re.sub(r'NoAuth$', '', tpl[1]).lower()
+                elAuth = None
+                dataDict[tpl[0]] = {'type': elType, 'auth': None, 'macid': tpl[2], 'portid': tpl[3], 'lacp': False}
+            elif tpl[5] and tpl[5] in dataDict:
+                dataDict[tpl[5]]['auth'] = False if re.search(r'NoAuth$', tpl[6]) else True
+        else: # Summit Series
+            macid = re.sub(r'-', ':', tpl[0])
+            portid = re.sub(r'-', ':', tpl[1])
+            typeMatch = re.match(r'(Server|Proxy)( \(No Auth\))?', tpl[3])
+            if typeMatch:
+                elType = typeMatch.group(1).lower()
+                elAuth = False if typeMatch.group(2) else True
+            else:
+                elType = 'client'
+                elAuth = None
+            dataDict[tpl[2]] = {'type': elType, 'auth': elAuth, 'macid': macid, 'portid': portid, 'lacp': False}
+
+    if Family == 'VSP Series': # On VSP only, dump LLDP neighbour tables
+        data = sendCLI_showRegex(CLI_Dict[Family]['list_lldp_neighbours'].format(generatePortRange(dataDict.keys())))
+        for port in dataDict:
+            if port in data:
+                if re.match(r'Ethernet Routing Switch', data[port]):
+                    dataDict[port]['neigh'] = 'ERS'
+                elif re.match(r'ExtremeXOS', data[port]):
+                    dataDict[port]['neigh'] = 'XOS'
+                else:
+                    dataDict[port]['neigh'] = None
+
+    if newPortList: # These are default ports enabled with FA & LACP by this script (only VSP Series will execute this part)
+        testPortList = [x for x in dataDict if x in newPortList] # Of ports above, these are the ones where an FA neighbour is seen
+        debug("extractFAelements() testPortList = {}".format(testPortList))
+        if testPortList:
+            testPortRange = generatePortRange(testPortList, 'testPortRange')
+            lacpDetectedPorts = sendCLI_showRegex(CLI_Dict[Family]['list_lacp_up_ports'].format(testPortRange))
+            for port in testPortList:
+                if port in lacpDetectedPorts:
+                    dataDict[port]['lacp'] = True
+
+    # {u'1/5': {'portid': u'00:01:00:18', 'type': u'proxy', 'auth': False, 'macid': u'02:04:96:af:0e:ea', 'lacp': True, 'neigh': ERS|XOS}}
+    debug("extractFAelements() = {}".format(dataDict))
+    return dataDict
+
+def extractChassisMac(): # v1 - Extract chassis MAC and return a sanitized MAC (lowercase hex and ':' byte separator)
+    family = emc_vars["family"]
+    data = sendCLI_showRegex(CLI_Dict[family]['get_chassis_mac'])
+    chassisMac = data.replace('-', ':').lower()
+    debug("extractChassisMac() = {}".format(chassisMac))
+    return chassisMac
+
+def xosExtractMltAndPortData(faAuthSupport=None): # v1 - Extract MLT data and Port data from XOS device
+    # Only supported for family = 'Summit Series'
+    mltDict = {}
+    portDict = {}
+    mltData = sendCLI_showRegex(CLI_Dict[Family]['get_mlt_data'])
+    if faAuthSupport:
+        faData = sendCLI_showRegex(CLI_Dict[Family]['list_fa_auth_ports'])
+        for port in faData:
+            faAuth = True if faData[port] == 'Enabled' else False
+            portDict[port] = {'faAuth': faAuth, 'mlt': None}
+    masterPort = None
+    for tpl in mltData:
+        if tpl[0]:
+            masterPort = tpl[0]
+            lacpEnabled = True if tpl[1] == 'LACP' else False
+            mltDict[masterPort] = {'lacp': lacpEnabled, 'ports': [tpl[2]]}
+        else:
+            mltDict[masterPort]['ports'].append(tpl[2])
+    for mltid in mltDict:
+        for port in mltDict[mltid]['ports']:
+            if port not in portDict:
+                portDict[port] = {'faAuth': None, 'mlt': mltid}
+            else:
+                portDict[port]['mlt'] = mltid
+        mltDict[mltid]['ports'] = generatePortRange(mltDict[mltid]['ports'])
+
+    debug("xosExtractMltAndPortData() mltDict = {}".format(mltDict))
+    debug("xosExtractMltAndPortData() portDict = {}".format(portDict))
+    # mltDict: will include info of all MLTs
+    # {"id" {'lacp': True|False, 'ports': "port-range"}}
+    # portDict: will include info of all ports
+    # {"port": {'faAuth': None|True|False, 'mlt': None|"id"}}
+    return mltDict, portDict
+
+def ersExtractMltAndPortData(include=[]): # v1 - Extract MLT data and Port data from ERS device (include = ['vlacp'])
+    # Only supported for family = 'ERS Series'
+    mltDict = {}
+    portDict = {}
+    mltData = sendCLI_showRegex(CLI_Dict[Family]['get_mlt_data'])
+    for tpl in mltData:
+        ports = None if tpl[1] == 'NONE' else tpl[1]
+        mltEnabled = True if tpl[2] == 'Enabled' else False
+        lacpKey = None if tpl[3] == 'NONE' else tpl[3]
+        if not ports and not lacpKey:
+            continue
+        lacpEnabled = True if lacpKey else False
+        mltDict[tpl[0]] = {'enable': mltEnabled, 'key': lacpKey, 'lacp': lacpEnabled, 'ports': ports, 'vlacp': False}
+    for mltid in mltDict:
+        if mltDict[mltid]['ports']: # If not None
+            for port in generatePortList(mltDict[mltid]['ports']):
+                portDict[port] = {'mlt': mltid}
+    if 'vlacp' in include:
+        vlacpData = sendCLI_showRegex(CLI_Dict[Family]['list_vlacp_ports'].format(generatePortRange(portDict.keys()))) # Only MLT ports
+        for mltid in mltDict:
+            mltDict[mltid]['vlacp'] = False
+        for port in vlacpData:
+            if vlacpData[port] == 'true' and port in portDict and portDict[port][mlt]:
+                mltDict[portDict[port][mlt]]['vlacp'] = True
+
+    debug("ersExtractMltAndPortData() mltDict = {}".format(mltDict))
+    debug("ersExtractMltAndPortData() portDict = {}".format(portDict))
+    # mltDict: will include info of all MLTs
+    # {"id" {'enable': True|False, 'key': None|"key", 'lacp': True|False, 'ports': "port-range", 'vlacp': True|False}}
+    # portDict: will include info of all ports which are assigned to an MLT [so not all ports]; we don't care about fa,faAuth as these are always enabeld on ERS
+    # {"port": {'mlt': None|"id"}}
+    return mltDict, portDict
+
+def extractSpbmGlobal(): # v1 - Tricky command to extract from, as it is different across VOSS, VSP8600 and XA
+    # Only supported for family = 'VSP Series'
+    cmd = 'list://show isis spbm||(?:(B-VID) +PRIMARY +(NICK) +LSDB +(IP)(?: +(IPV6))?(?: +(MULTICAST))?|^\d+ +(?:(\d+)-(\d+) +\d+ +)?(?:([\da-f]\.[\da-f]{2}\.[\da-f]{2}) +)?(?:disable|enable) +(disable|enable)(?: +(disable|enable))?(?: +(disable|enable))?|^\d+ +(?:primary|secondary) +([\da-f:]+)(?: +([\da-f\.]+))?)'
+    data = sendCLI_showRegex(cmd)
+    # VOSS:[(u'B-VID', u'NICK', u'IP', u'IPV6', u'MULTICAST', u'', u'', u'', u'', u'', u'', u'', u''), (u'', u'', u'', u'', u'', u'4051', u'4052', u'0.00.75', u'enable', u'disable', u'disable', u'', u''),           (u'', u'', u'', u'', u'', u'', u'', u'', u'', u'', u'', u'00:00:00:00:00:00', u'')]
+    # V86: [(u'B-VID', u'NICK', u'IP', u'', u'MULTICAST', u'', u'', u'', u'', u'', u'', u'', u''),     (u'', u'', u'', u'', u'', u'4051', u'4052', u'0.00.11', u'enable',             u'disable', u'', u'', u''),      (u'', u'', u'', u'', u'', u'', u'', u'', u'', u'', u'', u'82:bb:00:00:11:ff', u'82bb.0000.1200')]
+    # XA:  [(u'B-VID', u'NICK', u'IP', u'', u'', u'', u'', u'', u'', u'', u'', u'', u''),              (u'', u'', u'', u'', u'', u'4051', u'4052', u'0.00.46', u'enable',                         u'', u'', u'', u'')]
+    dataDict = {
+        'SpbmInstance' : False,
+        'BVIDs'        : [],
+        'Nickname'     : None,
+        'IP'           : None,
+        'IPV6'         : None,
+        'Multicast'    : None,
+        'SmltVirtBmac' : None,
+        'SmltPeerBmac' : None,
+    }
+    if len(data) > 1: # If we did not just match the banner line
+        dataDict['SpbmInstance'] = True
+        if data[1][5] and data[1][6]:
+            dataDict['BVIDs'] = [data[1][5],data[1][6]]
+        else:
+            dataDict['BVIDs'] = []
+        dataDict['Nickname'] = data[1][7]
+        dataDict['IP'] = data[1][8]
+        if data[0][3] == 'IPV6':
+            dataDict['IPV6'] = data[1][9]
+            if data[0][4] == 'MULTICAST':
+                dataDict['Multicast'] = data[1][10]
+        else:
+            if data[0][4] == 'MULTICAST':
+                dataDict['Multicast'] = data[1][9]
+    if len(data) == 3: # We got SMLT data (on XA we don't have the line)
+        if data[2][11] and data[2][11] != '00:00:00:00:00:00':
+            dataDict['SmltVirtBmac'] = data[2][11]
+            dataDict['SmltPeerBmac'] = data[2][12]
+    debug("extractSpbmGlobal() = {}".format(dataDict))
+    return dataDict
+
+def extractExosVmData(): # v1 - Extract EXOS VM data
+    # Only supported for family = 'Summit Series'
+    data = sendCLI_showRegex(CLI_Dict[Family]['get_vm_data'])
+    slotVmDict = {}
+    if data:
+        for tpl in data:
+            if tpl[0]:
+                slotVmDict['0'] = {'Memory': tpl[0]}
+            elif tpl[1]:
+               slotVmDict['0']['Cores'] = tpl[1]
+            elif tpl[2]:
+                slotVmDict[tpl[2]] = slotVmDict['0']
+                del slotVmDict['0']
+        debug("extractExosVmData() = {}".format(slotVmDict))
+    # On Stack returns: {u'1': {'Memory': u'5728', 'Cores': u'1'}, u'2': {'Memory': u'4096', 'Cores': u'1'}}
+    # On Standalone   : {'0': {'Memory': u'4096', 'Cores': u'1'}}
+    # If no VMs       : {}
+    return slotVmDict
+
+def extractPortVlanData(portListStr): # v1 - Extract VLAN config on provided ports
+    portVlanData = sendCLI_showRegex(CLI_Dict[Family]['list_port_vlans'].format(portListStr))
+    portVlanDict = {}
+    for tpl in portVlanData:
+        portVlanDict[tpl[0]] = {
+            'untagged': None,
+            'tagged'  : tpl[2].split(','),
+        }
+        if tpl[3] == 'enable' and int(tpl[1]) > 0: 
+            portVlanDict[tpl[0]]['untagged'] = tpl[1]
+    debug("extractPortVlanData() = {}".format(portVlanDict))
+    return portVlanDict
+
+def extractFabricIds(): # v1 - Extracts all the BMACs (including SMLT Virt bmacs) and nicknames in fabric areas
+    # Only supported for family = 'VSP Series'
+    isisAreaDict = sendCLI_showRegex(CLI_Dict[Family]['get_isis_area'], 'isisAreaDict') # Get the ISIS areas
+    fabricIdDict = {}
+    for area in isisAreaDict:
+        # Get the fabric IDs in current area
+        fabricIdList = sendCLI_showRegex(CLI_Dict[Family]['get_in_use_fabric_ids'].format(isisAreaDict[area].lower()), 'fabricIdList')
+
+        bmacHash = {}
+        nicknameHash = {}
+        for row in fabricIdList:
+            bmacHash[numberToMacAddr(idToNumber(row[0]))] = 1
+            nicknameHash[row[1]] = 1
+            if row[2] != '00:00:00:00:00:00':
+                bmacHash[row[2]] = 1
+        fabricIdDict[area] = {'bmacs': list(bmacHash.keys()), 'nicknames': list(nicknameHash.keys())}
+
+    debug("extractFabricIds() = {}".format(fabricIdDict))
+    return fabricIdDict
+
+def extractIsisInterfaces(): # v1 - Extract all the ISIS interfaces, in the 3 possible types: Port, MLT, Logical-intf
+    # Only supported for family = 'VSP Series'
+    isisIntfList = sendCLI_showRegex(CLI_Dict[Family]['get_isis_interfaces'], 'isisIntfList') # Get the ISIS areas
+    isisIntfPortList = []
+    isisIntfMltList = []
+    isisLogicalIntfNameList = []
+    isisLogicalIntfIdList = []
+    for intf in isisIntfList:
+        portMatch = re.match(r'^Port(\d+/\d+(?:/\d+)?)', intf)
+        mltMatch  = re.match(r'^Mlt(\d+)', intf)
+        if portMatch:
+            isisIntfPortList.append(portMatch.group(1))
+        elif mltMatch:
+            isisIntfMltList.append(mltMatch.group(1))
+        else:
+            isisLogicalIntfNameList.append(intf)
+    debug("extractIsisInterfaces() isisIntfPortList = {}".format(isisIntfPortList))
+    debug("extractIsisInterfaces() isisIntfMltList = {}".format(isisIntfMltList))
+    debug("extractIsisInterfaces() isisLogicalIntfNameList = {}".format(isisLogicalIntfNameList))
+
+    if isisLogicalIntfNameList: # We have some Fabric Extend interfaces..
+        feTunnelNameDict = sendCLI_showRegex(CLI_Dict[Family]['list_fe_tunnels_name'], 'feTunnelNameDict')
+        for tunName in isisLogicalIntfNameList:
+            isisLogicalIntfIdList.append(feTunnelNameDict[tunName])
+        debug("extractIsisInterfaces() isisLogicalIntfIdList = {}".format(isisLogicalIntfIdList))
+
+    isisIntfMltList.sort(key=int)
+    isisLogicalIntfIdList.sort(key=int)
+    isisIntfDict = {
+        'port'    : generatePortRange(isisIntfPortList),
+        'mlt'     : isisIntfMltList,
+        'logical' : isisLogicalIntfIdList,
+    }
+    debug("extractIsisInterfaces() isisIntfDict = {}".format(isisIntfDict))
+    return isisIntfDict
+
+def getIsidUniStruct(isid): # v1 - Extract all port members of an I-SID
+    # Only supported for family = 'VSP Series'
+    # the "show i-sid" command is too fiddly to scrape...
+    # the "show interfaces gigabitEthernet i-sid" command does not show I-SIDs with no ports assigned...
+    # so we use "show run module i-sid" instead...
+    cliOutput = sendCLI_showCommand(CLI_Dict[Family]['get_isid_uni_data'].format(isid))
+    isidPorts = {}
+    foundIsidData = False
+    for line in cliOutput.splitlines():
+        if foundIsidData:
+            matchObj = re.match(r'c-vid (\d+) (port|mlt) (\S+)', line)
+            if matchObj:
+                tagging = 'tag'
+                cvlan = matchObj.group(1)
+                btype = matchObj.group(2)
+                if btype == 'port':
+                    ports = matchObj.group(3)
+                    mlt = None
+                else:
+                    ports = None
+                    mlt = matchObj.group(3)
+            else:
+                matchObj = re.match(r'untagged-traffic (port|mlt) (\S+)', line)
+                if matchObj:
+                    tagging = 'untag'
+                    cvlan = None
+                    btype = matchObj.group(1)
+                    if btype == 'port':
+                        ports = matchObj.group(2)
+                        mlt = None
+                    else:
+                        ports = None
+                        mlt = matchObj.group(2)
+                else:
+                    matchObj = re.match(r'(port|mlt) (\S+)', line)
+                    if matchObj:
+                        tagging = 'transparent'
+                        cvlan = None
+                        btype = matchObj.group(1)
+                        if btype == 'port':
+                            ports = matchObj.group(2)
+                            mlt = None
+                        else:
+                            ports = None
+                            mlt = matchObj.group(2)
+                    elif re.match(r'exit', line):
+                        break # We come out!
+                    else:
+                        continue
+            if ports:
+                portList = generatePortList(ports)
+                debug("portList = {}".format(portList))
+                for port in portList:
+                    isidPorts[port] = {'type': tagging, 'vlan': cvlan}
+            if mlt:
+                isidPorts[mlt] = {'type': tagging, 'vlan': cvlan}
+
+        elif re.match(r'^i-sid {} '.format(isid), line):
+            isidPorts['exists'] = True
+            foundIsidData = True
+            continue
+        else: # Other line, skip
+            continue
+
+    debug("getIsidUniStruct OUT = {}".format(isidPorts))
+    return isidPorts
 
 
-# --> Insert Ludo Threads library here if required <--
+def idToNumber(idString): # v1 - Convert the sys-id or nickname or mac to a number
+    return int(re.sub(r'[\.:]', '', idString), base=16)
+
+def numberToHexStr(number, nibbleSize=''): # v1 - Convert a number to hex string
+    template = "{:0" + str(nibbleSize) + "x}"
+    return template.format(number)
+
+def numberToBinStr(number, bitSize=''): # v1 - Convert a number to binary string
+    template = "{:0" + str(bitSize) + "b}"
+    return template.format(number)
+
+def numberToNickname(idNumber): # v1 - Convert number to nickname string
+    hexStr = numberToHexStr(idNumber, 5)
+    return hexStr[0] + '.' + '.'.join(hexStr[i:i+2] for i in range(1, len(hexStr), 2))
+
+def numberToSystemId(idNumber): # v1 - Convert number to System ID
+    hexStr = numberToHexStr(idNumber, 12)
+    return '.'.join(hexStr[i:i+4] for i in range(0, len(hexStr), 4))
+
+def numberToMacAddr(idNumber):  # v1 - Convert number to MAC address
+    hexStr = numberToHexStr(idNumber, 12)
+    return ':'.join(hexStr[i:i+2] for i in range(0, len(hexStr), 2))
+
+def nicknameXorMask(nickname, mask): # v1 - Perform XOR of nickname with mask
+    return numberToNickname(idToNumber(nickname) ^ idToNumber(mask))
+
+def systemIdXorMask(sysId, mask): # v1 - Perform XOR of system-id with mask
+    return numberToSystemId(idToNumber(sysId) ^ idToNumber(mask))
+
+def macXorMask(mac, mask): # v1 - Perform XOR of MAC address with mask
+    return numberToMacAddr(idToNumber(mac) ^ idToNumber(mask))
+
+def idReplMask(inId, mask, value, nibbles=12): # v1 - Replaces masked bits with value provided; nibbles = 12 (MAC/SysId) / 5 (nickname)
+    bits = nibbles * 4
+    inIdNumber = idToNumber(inId)
+    maskNumber = idToNumber(mask)
+    notMaskNumber = maskNumber ^ ((1 << bits) - 1)
+    valueNumber = idToNumber(value)
+    maskBinStr = numberToBinStr(maskNumber, bits)
+    valueBinStr = numberToBinStr(valueNumber)
+    debug("inId     = {} / {}".format(numberToHexStr(inIdNumber, nibbles), numberToBinStr(inIdNumber, bits)))
+    debug("mask     = {} / {}".format(numberToHexStr(maskNumber, nibbles), maskBinStr))
+    debug("!mask    = {} / {}".format(numberToHexStr(notMaskNumber, nibbles), numberToBinStr(notMaskNumber, bits)))
+    debug("value    = {} / {}".format(numberToHexStr(valueNumber), valueBinStr))
+
+    valueMaskStr = ''
+    for b in reversed(maskBinStr):
+        if b == '1' and len(valueBinStr):
+            valueMaskStr = valueBinStr[-1] + valueMaskStr
+            valueBinStr = valueBinStr[:-1] # chop last bit off
+        else:
+            valueMaskStr = '0' + valueMaskStr
+    if len(valueBinStr):
+        print "idReplMask() remaining value bits {} not inserted !!".format(len(valueBinStr))
+    valueMaskNumber = int(valueMaskStr, base=2)
+    debug("vmask    = {} / {}".format(numberToHexStr(valueMaskNumber, nibbles), valueMaskStr))
+    maskedIdNumber = inIdNumber & notMaskNumber
+    debug("maskedId = {} / {}".format(numberToHexStr(maskedIdNumber, nibbles), numberToBinStr(maskedIdNumber, bits)))
+    finalIdNumber = maskedIdNumber | valueMaskNumber
+    debug("finalId  = {} / {}".format(numberToHexStr(finalIdNumber, nibbles), numberToBinStr(finalIdNumber, bits)))
+    return finalIdNumber
+
+def nicknameReplMask(nickname, mask, value): # v1 - Replaces nickname masked bits with value provided
+    return numberToNickname(idReplMask(nickname, mask, value, 5))
+
+def systemIdReplMask(sysId, mask, value): # v1 - Replaces system-id masked bits with value provided
+    return numberToSystemId(idReplMask(sysId, mask, value))
+
+def macReplMask(mac, mask, value): # v1 - Replaces MAC address masked bits with value provided
+    return numberToMacAddr(idReplMask(mac, mask, value))
+
+def parseCliCommands(chainStr): # v1 - Parses the CLI commands string and filters out empty lines and comment lines
+    cmdList = map(str.strip, str(chainStr).splitlines())
+    cmdList = filter(None, cmdList) # Filter out empty lines, if any
+    cmdList = [x for x in cmdList if x[0] != "#"] # Strip commented lines out
+    return "\n".join(cmdList)
+
+def parseCyphers(chainStr): # v1 - Parses the SSH Cyphers input and filters out empty lines and comment lines
+    cypherList = map(str.strip, str(chainStr).splitlines())
+    cypherList = filter(None, cypherList) # Filter out empty lines, if any
+    cypherList = [x for x in cypherList if x[0] != "#"] # Strip commented lines out
+    return cypherList
+
+def takePolicyDomainLock(policyDomain, waitTime=10, retries=6): # v1 - Take lock on opened policy domain
+    # If we fail to get a lock initially, this could be due to a user holding a lock on the same policy domain
+    # Or, it could be another instance of this same workflow running for another switch, doing the same thing
+    # We allow 1 waitTime only for the former (no retries), then we take the lock forcibly
+    # In the latter case, we retry as many times as retries, before failing, but never forcing
+
+    def myClonesRunning(): # Return true if more then 1 instance of myself running
+        runningWorkflowsList = nbiQuery(NBI_Query['listRunningWorkflows'], debugKey='runningWorkflowsList')
+        myselfCount = 0
+        for workflow in runningWorkflowsList:
+            if workflow['workflowName'] == scriptName():
+                myselfCount += 1
+        if myselfCount == 0:
+            exitError("Unexpected result while checking for clones of this workflow running\n{}".format(LastNbiError))
+        if myselfCount > 1:
+            return True
+        return False
+
+    forceFlag = False
+    retriesCount = 0
+    while not nbiMutation(NBI_Query['lockOpenedPolicyDomain'], FORCEFLAG=forceFlag): # Try take lock
+        if LastNbiError == "Conflict":
+            print "Unable to acquire lock on Policy Domain '{}'; re-trying in {} secs".format(policyDomain, waitTime)
+            time.sleep(waitTime)
+            if not myClonesRunning():
+                print "No other clones of myself running, forcing lock on next try"
+                forceFlag = True
+            retriesCount += 1
+            if retriesCount > retries:
+                exitError("Failed to place lock on Policy Domain '{}' after {} retries\n{}".format(policyDomain, retries, LastNbiError))
+        else:
+            exitError("Failed to place lock on Policy Domain '{}'\n{}".format(policyDomain, LastNbiError))
+    print "Placed lock on Policy Domain '{}'".format(policyDomain)
+
+def parseCyphers(chainStr): # v1 - Parses the SSH Cyphers input and filters out empty lines and comment lines
+    cypherList = map(str.strip, str(chainStr).splitlines())
+    cypherList = filter(None, cypherList) # Filter out empty lines, if any
+    cypherList = [x for x in cypherList if x[0] != "#"] # Strip commented lines out
+    return cypherList
 
 
-# --> XMC Python script actually starts here <--
+
+
 
 
 #
@@ -2793,6 +3714,7 @@ CLI_Dict = {
         'enable_context'             : 'enable',
         'config_context'             : 'configure',
         'disable_more_paging_cfg'    : 'setenv pagefilter 0',
+#        'disable_more_paging_cfg'    : 'configure; setenv pagefilter 0; exit',
         'get_mgmt_ip_vlan'           : 'str://show fa elements ||^\S+ +FA Server +(\d+)',
         'get_mgmt_ip_mask_and_gw'    : 'list-diagonal://show ip dhcp client {} ||^ +(?:IP Address +: {}\/(\d+\.\d+\.\d+\.\d+)|Default Gateway: (\d+\.\d+\.\d+\.\d+))', #Mgmt VLAN, IP Address; returns dotted mask
         'set_mgmt_ip_gateway'        : 'default-gateway {}', # Default Gateway IP
@@ -3265,6 +4187,43 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 }
                 ''',
         'key': 'groupNamesByType'
+    },
+    'getNacEngineLoadBalancing': {
+        'json': '''
+                {
+                  accessControl {
+                    engineGroup(name: "<NACGROUP>") {
+                      loadBalancingEnabled
+                    }
+                  }
+                }
+                ''',
+        'key': 'loadBalancingEnabled'
+    },
+    'getNacEngineLoadBalancingIPs': {
+        'json': '''
+                {
+                  accessControl {
+                    engineGroup(name: "<NACGROUP>") {
+                      loadBalancerIps
+                    }
+                  }
+                }
+                ''',
+        'key': 'loadBalancerIps'
+    },
+    'getNacEngineLoadBalancing': {
+        'json': '''
+                {
+                  accessControl {
+                    engineGroup(name: "<NACGROUP>") {
+                      loadBalancingEnabled
+                      loadBalancerIps
+                    }
+                  }
+                }
+                ''',
+        'key': 'engineGroup'
     },
 
 
@@ -3946,634 +4905,166 @@ RESTCONF = { # RESTCONF call / outValue = restconfCall(RESTCONF["createVlan"], N
 }
 
 
-#
-# Imports:
-#
+SNMP_Request = { # outValue = snmpGet|snmpSet|snmpWalk(SNMP_Request['<name>'], [instance=<instance>], [value=<value>])
+# SAMPLE Syntax:
+#   'queryName|mibName': {
+#       'oid': [<oidName>:]<singleOid> | [<listOf>], # For get & set; no leading dot; optional "oidName:" prepended
+#       'asn': <ASN_?> | [<listOf>],                 # Only for set, mandatory
+#       'set': <value> | [<listOf>],                 # Only for set, optional
+#       'map': {'key1': <val1>, 'key2': <val2> }     # Mapping ASCII values to int values
+#   },
+    'ifName': { # Walk as is; Get supply instance
+        'oid': 'ifName',
+        'asn': ASN_OCTET_STR, #DisplayString
+    },
+    'ifAdminStatus': { # Walk as is; Get|Set supply instance
+        'oid': 'ifAdminStatus',
+        'asn': ASN_INTEGER, #INTEGER {up(1), down(2), testing(3)
+    },
+    'ifAlias': { # Walk as is; Get|Set supply instance
+        'oid': 'ifAlias',
+        'asn': ASN_OCTET_STR_PRINTABLE, #DisplayString (SIZE(0..64))
+    },
+    'ifName_ifAlias': { # Walk as is; Get supply instance
+        'oid': ['ifName', 'ifAlias'],
+    },
+    'disableIqAgent': { # Get|Set only; supply no instance
+        'oid': 'rcCloudIqAgentEnable: 1.3.6.1.4.1.2272.1.230.1.1.1.0',
+        'asn': ASN_INTEGER, #TruthValue = INTEGER { true(1), false(2) }
+        'set': 2,
+    },
+    'enableIqAgent': { # Get|Set only; supply no instance
+        'oid': 'rcCloudIqAgentEnable: 1.3.6.1.4.1.2272.1.230.1.1.1.0',
+        'asn': ASN_INTEGER, #TruthValue = INTEGER { true(1), false(2) }
+        'set': 1,
+    },
+    'rcCloudIqAgentEnable': { # Get|Set only; supply no instance
+        'oid': 'rcCloudIqAgentEnable: 1.3.6.1.4.1.2272.1.230.1.1.1.0',
+        'asn': ASN_INTEGER, #TruthValue = INTEGER { true(1), false(2) }
+    },
+    'rcSshGlobalEnable': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalEnable: 1.3.6.1.4.1.2272.1.34.1.11.0',
+        'asn': ASN_INTEGER, #INTEGER { false(0), true(1), secure(2) }
+    },
+    'rcSshGlobalClientEnable': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalClientEnable: 1.3.6.1.4.1.2272.1.34.1.24.0',
+        'asn': ASN_INTEGER, #TruthValue = INTEGER { true(1), false(2) }
+    },
+    'rcSshGlobalSftpEnable': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalSftpEnable: 1.3.6.1.4.1.2272.1.34.1.19.0',
+        'asn': ASN_INTEGER, #TruthValue = INTEGER { true(1), false(2) }
+    },
+    'rcSshGlobalPort': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalPort: 1.3.6.1.4.1.2272.1.34.1.2.0',
+        'asn': ASN_INTEGER, #INTEGER (1..49151)
+    },
+    'rcSshGlobalMaxSession': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalMaxSession: 1.3.6.1.4.1.2272.1.34.1.3.0',
+        'asn': ASN_INTEGER, #INTEGER (0..8)
+    },
+    'rcSshGlobalTimeout': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalTimeout: 1.3.6.1.4.1.2272.1.34.1.4.0',
+        'asn': ASN_INTEGER, #INTEGER (1..120)
+    },
+    'rcSshGlobalRsaAuth': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalRsaAuth: 1.3.6.1.4.1.2272.1.34.1.7.0',
+        'asn': ASN_INTEGER, #TruthValue = INTEGER { true(1), false(2) }
+    },
+    'rcSshGlobalDsaAuth': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalDsaAuth: 1.3.6.1.4.1.2272.1.34.1.8.0',
+        'asn': ASN_INTEGER, #TruthValue = INTEGER { true(1), false(2) }
+    },
+    'rcSshGlobalPassAuth': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalPassAuth: 1.3.6.1.4.1.2272.1.34.1.9.0',
+        'asn': ASN_INTEGER, #TruthValue = INTEGER { true(1), false(2) }
+    },
+    'rcSshGlobalKeyboardInteractiveAuth': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalKeyboardInteractiveAuth: 1.3.6.1.4.1.2272.1.34.1.20.0',
+        'asn': ASN_INTEGER, #TruthValue = INTEGER { true(1), false(2) }
+    },
+    'rcSshGlobalX509AuthEnable': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalX509AuthEnable: 1.3.6.1.4.1.2272.1.34.1.25.0',
+        'asn': ASN_INTEGER, #TruthValue = INTEGER { true(1), false(2) }
+    },
+    'rcSshGlobalX509AuthCertCAName': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalX509AuthCertCAName: 1.3.6.1.4.1.2272.1.34.1.31.0',
+        'asn': ASN_OCTET_STR_PRINTABLE, #DisplayString (SIZE(0..45))
+    },
+    'rcSshGlobalX509AuthCertSubjectName': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalX509AuthCertSubjectName: 1.3.6.1.4.1.2272.1.34.1.30.0',
+        'asn': ASN_OCTET_STR_PRINTABLE, #DisplayString (SIZE(0..45))
+    },
+    'rcSshGlobalX509AuthUsernameOverwrite': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalX509AuthUsernameOverwrite: 1.3.6.1.4.1.2272.1.34.1.27.0',
+        'asn': ASN_INTEGER, #TruthValue = INTEGER { true(1), false(2) }
+    },
+    'rcSshGlobalX509AuthUsernameStripDomain': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalX509AuthUsernameStripDomain: 1.3.6.1.4.1.2272.1.34.1.28.0',
+        'asn': ASN_INTEGER, #TruthValue = INTEGER { true(1), false(2) }
+    },
+    'rcSshGlobalX509AuthUsernameUseDomain': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalX509AuthUsernameUseDomain: 1.3.6.1.4.1.2272.1.34.1.29.0',
+        'asn': ASN_OCTET_STR_PRINTABLE, #DisplayString (SIZE(0..255))
+    },
+    'rcSshGlobalX509AuthRevocationCheckMethod': { # Get|Set only; supply no instance
+        'oid': 'rcSshGlobalX509AuthRevocationCheckMethod: 1.3.6.1.4.1.2272.1.34.1.26.0',
+        'asn': ASN_INTEGER, #INTEGER { ocsp(1), none(2) }
+        'map': { 'ocsp': 1, 'none': 2 }
+    },
+    'rcSshAuthType': { # Get|Set only; supply no instance
+        'oid': 'rcSshAuthType: 1.3.6.1.4.1.2272.1.34.1.21.0',
+        'asn': ASN_OCTET_STR_HEX, #BITS { hmacSha1(0), aeadAes128GcmSsh(1), aeadAes256GcmSsh(2), hmacSha2256(3) }
+    },
+    'rcSshEncryptionType': { # Get|Set only; supply no instance
+        'oid': 'rcSshEncryptionType: 1.3.6.1.4.1.2272.1.34.1.22.0',
+        'asn': ASN_OCTET_STR_HEX, #BITS { aes128Cbc(0), aes256Cbc(1), threeDesCbc(2), aeadAes128GcmSsh(3), aeadAes256GcmSsh(4), aes128Ctr(5),
+                            #       rijndael128Cbc(6), aes256Ctr(7), aes192Ctr(8), aes192Cbc(9), rijndael192Cbc(10), blowfishCbc(11) }
+    },
+    'rcSshKeyExchangeMethod': { # Get|Set only; supply no instance
+        'oid': 'rcSshKeyExchangeMethod: 1.3.6.1.4.1.2272.1.34.1.23.0',
+        'asn': ASN_OCTET_STR_HEX, #BITS { diffieHellmanGroup14Sha1(0), diffieHellmanGroup1Sha1(1) -- obsolete, diffieHellmanGroupExchangeSha256(2) }
+    },
+}
+
+SNMP_TruthValue = { # Mapping input enable/disable
+    'enable' : 1, # true
+    'disable': 2, # false
+}
 
 
 
-#
-# Other Custom Functions
-#
-
-def extractVistData(): # v1 - Tricky command to extract from, as it is different across VOSS, VSP8600 and XA
-    # Only supported for family = 'VSP Series'
-    data = sendCLI_showRegex(CLI_Dict[Family]['get_virtual_ist_data'])
-    dataDict = {}
-    dataDict['vlan']  = data[0][0] if data else None
-    dataDict['state'] = data[0][1] if data else None
-    dataDict['role']  = data[1][2] if data else None
-    debug("extractVistData() = {}".format(dataDict))
-    return dataDict
-
-def compareIsisSysId(selfId, peerId): # v1 - Returns TRUE if selfId < peerId
-    selfId = int(selfId.replace('.', ''), 16) # Convert from hex
-    peerId = int(peerId.replace('.', ''), 16) # Convert from hex
-    if selfId < peerId:
-        return True
-    return False
-
-def compareMacIsisSysId(chassisMac, isisSysId): # v1 - Determines whether the ISIS System ID was user assigned or is derived from chassis MAC
-    chassisMac = chassisMac.replace(':', '')[0:10] #94:9b:2c:b4:74:00 ==> 949b2cb474
-    isisSysId  = isisSysId.replace('.', '')[0:10]  #949b.2cb4.7484    ==> 949b2cb474
-    result = (chassisMac == isisSysId)
-    debug("compareMacIsisSysId() = {}".format(result))
-    return result
-
-def determineIstRole(selfId, peerId): # v1 - Determines role of switch in SMLT Cluster
-    if compareIsisSysId(selfId, peerId):
-        role = 'Primary'
-    else:
-        role = 'Secondary'
-    debug("determineIstRole() = {}".format(role))
-    return role
-
-def allocateSmltVirtBmac(role, selfId, peerId, takenBmacs): # v1 - Given the SysId of the primary vIST node, cycles last byte until it finds a BMAC not in the list provided 
-    baseId = selfId if role == 'Primary' else peerId
-    baseId = baseId.replace('.', '') #949b.2cb4.7484    ==> 949b2cb47484
-    baseMac = ':'.join(re.findall(r'[\da-f]{2}', baseId[:-2])) # All but last hex byte ==> 94:9b:2c:b4:74
-    initLastByte = int(baseId[-2:], 16) # decimal of hex 84
-    lastByte = initLastByte
-    direction = 1 # We try and increment it
-    while 1: # Until we find a unique Bmac
-        if lastByte == 255: # If we reach 0xff, we need to search decrementing
-            direction = -1
-            lastByte = initLastByte # We go the other way
-        elif direction == -1 and lastByte == 0: # Bad sign..
-            exitError('allocateSmltVirtBmac(): unable to allocate smlt-virt-bmac in range {}:xx'.format(baseMac))
-        byteValue = lastByte + direction
-        smltVirtBmac = "{}:{:02x}".format(baseMac, byteValue)
-        if smltVirtBmac not in takenBmacs:
-            break
-        lastByte = byteValue
-    debug("allocateSmltVirtBmac() = {}".format(smltVirtBmac))
-    return smltVirtBmac
-
-def allocateIstVlan(selfList, peerList): # v1 - Given a list of already used VLANs in 4k range, allocates the vIST VLAN
-    step = 1 if IstVLANrange[0] < IstVLANrange[1] else -1
-    istVlan = None
-    for vlan in range(IstVLANrange[0], IstVLANrange[1], step):
-        if str(vlan) not in selfList and str(vlan) not in peerList:
-            istVlan = vlan
-            break
-    if not istVlan:
-        exitError('allocateIstVlan(): unable to allocate available vIST VLAN in range {}-{}'.format(IstVLANrange[0], IstVLANrange[1]))
-    debug("allocateIstVlan() = {}".format(istVlan))
-    return istVlan
-
-def allocateIstMltId(selfList, peerList): # v1 - Given a list of already used MLT ids, allocates the vIST MLT id
-    step = 1 if IstMLTrange[0] < IstMLTrange[1] else -1
-    istMltId = None
-    for mltid in range(IstMLTrange[0], IstMLTrange[1], step):
-        if str(mltid) not in selfList and str(mltid) not in peerList:
-            istMltId = mltid
-            break
-    if not istMltId:
-        exitError('allocateIstMltId(): unable to allocate available vIST MLT id in range {}-{}'.format(IstMLTrange[0], IstMLTrange[1]))
-    debug("allocateIstMltId() = {}".format(istMltId))
-    return istMltId
-
-def allocateClusterId(role, selfNickname, peerNickname): # v1 - Allocates a DVR Leaf Cluster Id by taking the last 9 bits of the Primary node's nickname
-    nickname = selfNickname if role == 'Primary' else peerNickname
-    nicknumber = int(nickname.replace('.', ''), 16)
-    clusterId = nicknumber & 0x1ff # Cluster-id 1-1000 = last 9bits of primary nickname
-    debug("allocateClusterId() = {}".format(clusterId))
-    return clusterId
-
-def allocateIstIsid(role, selfNickname, peerNickname): # v1 - Allocates a vIST I-SID by taking the last 19 bits of the Primary node's nickname
-    nickname = selfNickname if role == 'Primary' else peerNickname
-    nicknumber = int(nickname.replace('.', ''), 16)
-    vistIsid = VistIsidOffset + (nicknumber & 0x7ffff) # IST I-SID (15000000 + last 19bits of Primary Nickname)  
-    debug("allocateIstIsid() = {}".format(vistIsid))
-    return vistIsid
-
-def allocateIstIP(role, selfNickname, peerNickname): # v3 - Allocates the vIST IP by taking 192.168.255.X/30 with last 6bits of Secondary's nickname
-    nickname = peerNickname if role == 'Primary' else selfNickname
-    nicknumber = int(nickname.replace('.', ''), 16)
-    ipSubnet = ipToNumber(VistIPbase[0]) + ((nicknumber & 0x3f) << 2)
-    ipNumber1 = ipSubnet + 1
-    ipNumber2 = ipSubnet + 2
-    istIp1 = numberToIp(ipNumber1)
-    istIp2 = numberToIp(ipNumber2)
-    istSubnet = (numberToIp(ipSubnet), VistIPbase[1]) # IP/Mask
-    istIPself = istIp2 if role == 'Primary' else istIp1 # Here we ensure Master = Primary
-    istIPpeer = istIp1 if role == 'Primary' else istIp2 # Here we ensure Master = Primary
-    debug("allocateIstIP() subnet = {} / self = {} / peer = {}".format(istSubnet, istIPself, istIPpeer))
-    return istSubnet, istIPself, istIPpeer
-
-def allocateMltIds(offsetId, numberOfMlts, inUseList1, inUseList2=[]): # v1 - Given the list of in use MLTs from both vIST peers, provides a list of free MLT ids to use
-    mltList = []
-    mltid = offsetId
-    while 1:
-        if str(mltid) not in inUseList1 and str(mltid) not in inUseList2:
-            mltList.append(str(mltid))
-        if len(mltList) == numberOfMlts:
-            break
-        mltid += 1
-    debug("allocateMltIds() = {}".format(mltList))
-    return mltList
-
-def allocateMltId(offsetId, inUseList1, inUseList2=[]): # v1 - Given the list of in use MLTs from both vIST peers, provides a list of free MLT ids to use
-    allocatedMltid = None
-    mltid = offsetId
-    while 1:
-        if str(mltid) not in inUseList1 and str(mltid) not in inUseList2:
-            allocatedMltid = mltid
-            break
-        mltid += 1
-    debug("allocateMltId() = {}".format(allocatedMltid))
-    return allocatedMltid
-
-def extractMltData(include=[]): # v2 - Extract MLT data: optionally include = ['fa', 'vlacp', 'lacp-extra']
-    # Only supported for family = 'VSP Series'
-    data = sendCLI_showRegex(CLI_Dict[Family]['get_mlt_data'])
-    mltDict = {}
-    mltPortDict = {}
-    for tpl in data:
-        if tpl[0]:
-            mltDict[tpl[0]] = {'type': tpl[1], 'ports': tpl[2]}
-        elif tpl[3]:
-            mltDict[tpl[3]]['lacp'] = tpl[4]
-        elif tpl[5]:
-            mltDict[tpl[5]]['flex'] = tpl[6]
-    for mltid in mltDict:
-        for port in generatePortList(mltDict[mltid]['ports']):
-            mltPortDict[port] = mltid
-
-    if mltDict:
-        if 'fa' in include:
-            data = sendCLI_showRegex(CLI_Dict[Family]['list_fa_mlts'])
-            for mltid in mltDict:
-                mltDict[mltid]['fa'] = bool(mltid in data)
-        if 'vlacp' in include:
-            for mltid in mltDict:
-                mltDict[mltid]['vlacp'] = False
-            data = sendCLI_showRegex(CLI_Dict[Family]['list_vlacp_ports'].format(generatePortRange(mltPortDict.keys())))
-            for port in data:
-                if data[port] == 'true' and port in mltPortDict:
-                    mltDict[mltPortDict[port]]['vlacp'] = True
-        if 'lacp-extra' in include:
-            for mltid in mltDict:
-                mltDict[mltid]['key'] = None
-            mltKey = sendCLI_showRegex(CLI_Dict[Family]['list_mlt_lacp_key'])
-            portKey = sendCLI_showRegex(CLI_Dict[Family]['list_port_lacp_key'])
-            for mltid in mltKey:
-                mltDict[mltid]['key'] = mltKey[mltid]
-                matchingKeyPortList = [x for x in portKey if portKey[x] == mltKey[mltid]]
-                # This overwrites the ports, but at least we get in there all ports configured with matching LACP key (not just ports active in MLT LAG)
-                mltDict[mltid]['ports'] = generatePortRange(matchingKeyPortList)
-
-    debug("extractMltData() = {}".format(mltDict))
-    return mltDict, mltPortDict
-
-def findUnusedPorts(mltPortDict={}): # v1 - This functions returns a list of "default" ports, i.e. unconfigured ports
-    # Only supported for family = 'VSP Series'
-    # A port is considered here to be default if it is untagged and only member of VLAN 1 or no VLAN at all (this already excludes ISIS ports)
-    # The up/down state of the port is intentionally not considered here (a default port can be already enabled)
-    # Checks are also made to ensure that the returned port list does not contain any:
-    # - Brouter ports
-    # - MLT ports:  In some scripts MLT data needs extracting in greater depth than what needed here; in which case
-    #               an already populated mltPortDict can be supplied; see function extractMltData()
-    vlanDefaultPorts = sendCLI_showRegex(CLI_Dict[Family]['list_vlan_default_ports'], 'vlanDefaultPorts')
-    brouterPorts = sendCLI_showRegex(CLI_Dict[Family]['list_brouter_ports'], 'brouterPorts')
-    if not mltPortDict:
-        mltPortDict = extractMltData(['lacp-extra'])[1] # We just fetch the basic MLT data + lacp enabled ports
-    defaultPorts = [x for x in vlanDefaultPorts if x not in brouterPorts and x not in mltPortDict]
-    debug("findUnusedPorts() = {}".format(defaultPorts))
-    return defaultPorts
-
-def extractFAelements(newPortList): # v1 - Extracts data from show fa elements
-    # Dump FA element tables
-    data = sendCLI_showRegex(CLI_Dict[Family]['list_fa_elements'])
-    dataDict = {}
-    for tpl in data:
-        if Family in ['VSP Series', 'ERS Series']:
-            if tpl[0]:
-                elType = re.sub(r'NoAuth$', '', tpl[1]).lower()
-                elAuth = None
-                dataDict[tpl[0]] = {'type': elType, 'auth': None, 'macid': tpl[2], 'portid': tpl[3], 'lacp': False}
-            elif tpl[5] and tpl[5] in dataDict:
-                dataDict[tpl[5]]['auth'] = False if re.search(r'NoAuth$', tpl[6]) else True
-        else: # Summit Series
-            macid = re.sub(r'-', ':', tpl[0])
-            portid = re.sub(r'-', ':', tpl[1])
-            typeMatch = re.match(r'(Server|Proxy)( \(No Auth\))?', tpl[3])
-            if typeMatch:
-                elType = typeMatch.group(1).lower()
-                elAuth = False if typeMatch.group(2) else True
-            else:
-                elType = 'client'
-                elAuth = None
-            dataDict[tpl[2]] = {'type': elType, 'auth': elAuth, 'macid': macid, 'portid': portid, 'lacp': False}
-
-    if Family == 'VSP Series': # On VSP only, dump LLDP neighbour tables
-        data = sendCLI_showRegex(CLI_Dict[Family]['list_lldp_neighbours'].format(generatePortRange(dataDict.keys())))
-        for port in dataDict:
-            if port in data:
-                if re.match(r'Ethernet Routing Switch', data[port]):
-                    dataDict[port]['neigh'] = 'ERS'
-                elif re.match(r'ExtremeXOS', data[port]):
-                    dataDict[port]['neigh'] = 'XOS'
-                else:
-                    dataDict[port]['neigh'] = None
-
-    if newPortList: # These are default ports enabled with FA & LACP by this script (only VSP Series will execute this part)
-        testPortList = [x for x in dataDict if x in newPortList] # Of ports above, these are the ones where an FA neighbour is seen
-        debug("extractFAelements() testPortList = {}".format(testPortList))
-        if testPortList:
-            testPortRange = generatePortRange(testPortList, 'testPortRange')
-            lacpDetectedPorts = sendCLI_showRegex(CLI_Dict[Family]['list_lacp_up_ports'].format(testPortRange))
-            for port in testPortList:
-                if port in lacpDetectedPorts:
-                    dataDict[port]['lacp'] = True
-
-    # {u'1/5': {'portid': u'00:01:00:18', 'type': u'proxy', 'auth': False, 'macid': u'02:04:96:af:0e:ea', 'lacp': True, 'neigh': ERS|XOS}}
-    debug("extractFAelements() = {}".format(dataDict))
-    return dataDict
-
-def extractChassisMac(): # v1 - Extract chassis MAC and return a sanitized MAC (lowercase hex and ':' byte separator)
-    family = emc_vars["family"]
-    data = sendCLI_showRegex(CLI_Dict[family]['get_chassis_mac'])
-    chassisMac = data.replace('-', ':').lower()
-    debug("extractChassisMac() = {}".format(chassisMac))
-    return chassisMac
-
-def xosExtractMltAndPortData(faAuthSupport=None): # v1 - Extract MLT data and Port data from XOS device
-    # Only supported for family = 'Summit Series'
-    mltDict = {}
-    portDict = {}
-    mltData = sendCLI_showRegex(CLI_Dict[Family]['get_mlt_data'])
-    if faAuthSupport:
-        faData = sendCLI_showRegex(CLI_Dict[Family]['list_fa_auth_ports'])
-        for port in faData:
-            faAuth = True if faData[port] == 'Enabled' else False
-            portDict[port] = {'faAuth': faAuth, 'mlt': None}
-    masterPort = None
-    for tpl in mltData:
-        if tpl[0]:
-            masterPort = tpl[0]
-            lacpEnabled = True if tpl[1] == 'LACP' else False
-            mltDict[masterPort] = {'lacp': lacpEnabled, 'ports': [tpl[2]]}
-        else:
-            mltDict[masterPort]['ports'].append(tpl[2])
-    for mltid in mltDict:
-        for port in mltDict[mltid]['ports']:
-            if port not in portDict:
-                portDict[port] = {'faAuth': None, 'mlt': mltid}
-            else:
-                portDict[port]['mlt'] = mltid
-        mltDict[mltid]['ports'] = generatePortRange(mltDict[mltid]['ports'])
-
-    debug("xosExtractMltAndPortData() mltDict = {}".format(mltDict))
-    debug("xosExtractMltAndPortData() portDict = {}".format(portDict))
-    # mltDict: will include info of all MLTs
-    # {"id" {'lacp': True|False, 'ports': "port-range"}}
-    # portDict: will include info of all ports
-    # {"port": {'faAuth': None|True|False, 'mlt': None|"id"}}
-    return mltDict, portDict
-
-def ersExtractMltAndPortData(include=[]): # v1 - Extract MLT data and Port data from ERS device (include = ['vlacp'])
-    # Only supported for family = 'ERS Series'
-    mltDict = {}
-    portDict = {}
-    mltData = sendCLI_showRegex(CLI_Dict[Family]['get_mlt_data'])
-    for tpl in mltData:
-        ports = None if tpl[1] == 'NONE' else tpl[1]
-        mltEnabled = True if tpl[2] == 'Enabled' else False
-        lacpKey = None if tpl[3] == 'NONE' else tpl[3]
-        if not ports and not lacpKey:
-            continue
-        lacpEnabled = True if lacpKey else False
-        mltDict[tpl[0]] = {'enable': mltEnabled, 'key': lacpKey, 'lacp': lacpEnabled, 'ports': ports, 'vlacp': False}
-    for mltid in mltDict:
-        if mltDict[mltid]['ports']: # If not None
-            for port in generatePortList(mltDict[mltid]['ports']):
-                portDict[port] = {'mlt': mltid}
-    if 'vlacp' in include:
-        vlacpData = sendCLI_showRegex(CLI_Dict[Family]['list_vlacp_ports'].format(generatePortRange(portDict.keys()))) # Only MLT ports
-        for mltid in mltDict:
-            mltDict[mltid]['vlacp'] = False
-        for port in vlacpData:
-            if vlacpData[port] == 'true' and port in portDict and portDict[port][mlt]:
-                mltDict[portDict[port][mlt]]['vlacp'] = True
-
-    debug("ersExtractMltAndPortData() mltDict = {}".format(mltDict))
-    debug("ersExtractMltAndPortData() portDict = {}".format(portDict))
-    # mltDict: will include info of all MLTs
-    # {"id" {'enable': True|False, 'key': None|"key", 'lacp': True|False, 'ports': "port-range", 'vlacp': True|False}}
-    # portDict: will include info of all ports which are assigned to an MLT [so not all ports]; we don't care about fa,faAuth as these are always enabeld on ERS
-    # {"port": {'mlt': None|"id"}}
-    return mltDict, portDict
-
-def extractSpbmGlobal(): # v1 - Tricky command to extract from, as it is different across VOSS, VSP8600 and XA
-    # Only supported for family = 'VSP Series'
-    cmd = 'list://show isis spbm||(?:(B-VID) +PRIMARY +(NICK) +LSDB +(IP)(?: +(IPV6))?(?: +(MULTICAST))?|^\d+ +(?:(\d+)-(\d+) +\d+ +)?(?:([\da-f]\.[\da-f]{2}\.[\da-f]{2}) +)?(?:disable|enable) +(disable|enable)(?: +(disable|enable))?(?: +(disable|enable))?|^\d+ +(?:primary|secondary) +([\da-f:]+)(?: +([\da-f\.]+))?)'
-    data = sendCLI_showRegex(cmd)
-    # VOSS:[(u'B-VID', u'NICK', u'IP', u'IPV6', u'MULTICAST', u'', u'', u'', u'', u'', u'', u'', u''), (u'', u'', u'', u'', u'', u'4051', u'4052', u'0.00.75', u'enable', u'disable', u'disable', u'', u''),           (u'', u'', u'', u'', u'', u'', u'', u'', u'', u'', u'', u'00:00:00:00:00:00', u'')]
-    # V86: [(u'B-VID', u'NICK', u'IP', u'', u'MULTICAST', u'', u'', u'', u'', u'', u'', u'', u''),     (u'', u'', u'', u'', u'', u'4051', u'4052', u'0.00.11', u'enable',             u'disable', u'', u'', u''),      (u'', u'', u'', u'', u'', u'', u'', u'', u'', u'', u'', u'82:bb:00:00:11:ff', u'82bb.0000.1200')]
-    # XA:  [(u'B-VID', u'NICK', u'IP', u'', u'', u'', u'', u'', u'', u'', u'', u'', u''),              (u'', u'', u'', u'', u'', u'4051', u'4052', u'0.00.46', u'enable',                         u'', u'', u'', u'')]
-    dataDict = {
-        'SpbmInstance' : False,
-        'BVIDs'        : [],
-        'Nickname'     : None,
-        'IP'           : None,
-        'IPV6'         : None,
-        'Multicast'    : None,
-        'SmltVirtBmac' : None,
-        'SmltPeerBmac' : None,
-    }
-    if len(data) > 1: # If we did not just match the banner line
-        dataDict['SpbmInstance'] = True
-        if data[1][5] and data[1][6]:
-            dataDict['BVIDs'] = [data[1][5],data[1][6]]
-        else:
-            dataDict['BVIDs'] = []
-        dataDict['Nickname'] = data[1][7]
-        dataDict['IP'] = data[1][8]
-        if data[0][3] == 'IPV6':
-            dataDict['IPV6'] = data[1][9]
-            if data[0][4] == 'MULTICAST':
-                dataDict['Multicast'] = data[1][10]
-        else:
-            if data[0][4] == 'MULTICAST':
-                dataDict['Multicast'] = data[1][9]
-    if len(data) == 3: # We got SMLT data (on XA we don't have the line)
-        if data[2][11] and data[2][11] != '00:00:00:00:00:00':
-            dataDict['SmltVirtBmac'] = data[2][11]
-            dataDict['SmltPeerBmac'] = data[2][12]
-    debug("extractSpbmGlobal() = {}".format(dataDict))
-    return dataDict
-
-def extractExosVmData(): # v1 - Extract EXOS VM data
-    # Only supported for family = 'Summit Series'
-    data = sendCLI_showRegex(CLI_Dict[Family]['get_vm_data'])
-    slotVmDict = {}
-    if data:
-        for tpl in data:
-            if tpl[0]:
-                slotVmDict['0'] = {'Memory': tpl[0]}
-            elif tpl[1]:
-               slotVmDict['0']['Cores'] = tpl[1]
-            elif tpl[2]:
-                slotVmDict[tpl[2]] = slotVmDict['0']
-                del slotVmDict['0']
-        debug("extractExosVmData() = {}".format(slotVmDict))
-    # On Stack returns: {u'1': {'Memory': u'5728', 'Cores': u'1'}, u'2': {'Memory': u'4096', 'Cores': u'1'}}
-    # On Standalone   : {'0': {'Memory': u'4096', 'Cores': u'1'}}
-    # If no VMs       : {}
-    return slotVmDict
-
-def extractPortVlanData(portListStr): # v1 - Extract VLAN config on provided ports
-    portVlanData = sendCLI_showRegex(CLI_Dict[Family]['list_port_vlans'].format(portListStr))
-    portVlanDict = {}
-    for tpl in portVlanData:
-        portVlanDict[tpl[0]] = {
-            'untagged': None,
-            'tagged'  : tpl[2].split(','),
-        }
-        if tpl[3] == 'enable' and int(tpl[1]) > 0: 
-            portVlanDict[tpl[0]]['untagged'] = tpl[1]
-    debug("extractPortVlanData() = {}".format(portVlanDict))
-    return portVlanDict
-
-def extractFabricIds(): # v1 - Extracts all the BMACs (including SMLT Virt bmacs) and nicknames in fabric areas
-    # Only supported for family = 'VSP Series'
-    isisAreaDict = sendCLI_showRegex(CLI_Dict[Family]['get_isis_area'], 'isisAreaDict') # Get the ISIS areas
-    fabricIdDict = {}
-    for area in isisAreaDict:
-        # Get the fabric IDs in current area
-        fabricIdList = sendCLI_showRegex(CLI_Dict[Family]['get_in_use_fabric_ids'].format(isisAreaDict[area].lower()), 'fabricIdList')
-
-        bmacHash = {}
-        nicknameHash = {}
-        for row in fabricIdList:
-            bmacHash[numberToMacAddr(idToNumber(row[0]))] = 1
-            nicknameHash[row[1]] = 1
-            if row[2] != '00:00:00:00:00:00':
-                bmacHash[row[2]] = 1
-        fabricIdDict[area] = {'bmacs': list(bmacHash.keys()), 'nicknames': list(nicknameHash.keys())}
-
-    debug("extractFabricIds() = {}".format(fabricIdDict))
-    return fabricIdDict
-
-def extractIsisInterfaces(): # v1 - Extract all the ISIS interfaces, in the 3 possible types: Port, MLT, Logical-intf
-    # Only supported for family = 'VSP Series'
-    isisIntfList = sendCLI_showRegex(CLI_Dict[Family]['get_isis_interfaces'], 'isisIntfList') # Get the ISIS areas
-    isisIntfPortList = []
-    isisIntfMltList = []
-    isisLogicalIntfNameList = []
-    isisLogicalIntfIdList = []
-    for intf in isisIntfList:
-        portMatch = re.match(r'^Port(\d+/\d+(?:/\d+)?)', intf)
-        mltMatch  = re.match(r'^Mlt(\d+)', intf)
-        if portMatch:
-            isisIntfPortList.append(portMatch.group(1))
-        elif mltMatch:
-            isisIntfMltList.append(mltMatch.group(1))
-        else:
-            isisLogicalIntfNameList.append(intf)
-    debug("extractIsisInterfaces() isisIntfPortList = {}".format(isisIntfPortList))
-    debug("extractIsisInterfaces() isisIntfMltList = {}".format(isisIntfMltList))
-    debug("extractIsisInterfaces() isisLogicalIntfNameList = {}".format(isisLogicalIntfNameList))
-
-    if isisLogicalIntfNameList: # We have some Fabric Extend interfaces..
-        feTunnelNameDict = sendCLI_showRegex(CLI_Dict[Family]['list_fe_tunnels_name'], 'feTunnelNameDict')
-        for tunName in isisLogicalIntfNameList:
-            isisLogicalIntfIdList.append(feTunnelNameDict[tunName])
-        debug("extractIsisInterfaces() isisLogicalIntfIdList = {}".format(isisLogicalIntfIdList))
-
-    isisIntfMltList.sort(key=int)
-    isisLogicalIntfIdList.sort(key=int)
-    isisIntfDict = {
-        'port'    : generatePortRange(isisIntfPortList),
-        'mlt'     : isisIntfMltList,
-        'logical' : isisLogicalIntfIdList,
-    }
-    debug("extractIsisInterfaces() isisIntfDict = {}".format(isisIntfDict))
-    return isisIntfDict
-
-def getIsidUniStruct(isid): # v1 - Extract all port members of an I-SID
-    # Only supported for family = 'VSP Series'
-    # the "show i-sid" command is too fiddly to scrape...
-    # the "show interfaces gigabitEthernet i-sid" command does not show I-SIDs with no ports assigned...
-    # so we use "show run module i-sid" instead...
-    cliOutput = sendCLI_showCommand(CLI_Dict[Family]['get_isid_uni_data'].format(isid))
-    isidPorts = {}
-    foundIsidData = False
-    for line in cliOutput.splitlines():
-        if foundIsidData:
-            matchObj = re.match(r'c-vid (\d+) (port|mlt) (\S+)', line)
-            if matchObj:
-                tagging = 'tag'
-                cvlan = matchObj.group(1)
-                btype = matchObj.group(2)
-                if btype == 'port':
-                    ports = matchObj.group(3)
-                    mlt = None
-                else:
-                    ports = None
-                    mlt = matchObj.group(3)
-            else:
-                matchObj = re.match(r'untagged-traffic (port|mlt) (\S+)', line)
-                if matchObj:
-                    tagging = 'untag'
-                    cvlan = None
-                    btype = matchObj.group(1)
-                    if btype == 'port':
-                        ports = matchObj.group(2)
-                        mlt = None
-                    else:
-                        ports = None
-                        mlt = matchObj.group(2)
-                else:
-                    matchObj = re.match(r'(port|mlt) (\S+)', line)
-                    if matchObj:
-                        tagging = 'transparent'
-                        cvlan = None
-                        btype = matchObj.group(1)
-                        if btype == 'port':
-                            ports = matchObj.group(2)
-                            mlt = None
-                        else:
-                            ports = None
-                            mlt = matchObj.group(2)
-                    elif re.match(r'exit', line):
-                        break # We come out!
-                    else:
-                        continue
-            if ports:
-                portList = generatePortList(ports)
-                debug("portList = {}".format(portList))
-                for port in portList:
-                    isidPorts[port] = {'type': tagging, 'vlan': cvlan}
-            if mlt:
-                isidPorts[mlt] = {'type': tagging, 'vlan': cvlan}
-
-        elif re.match(r'^i-sid {} '.format(isid), line):
-            isidPorts['exists'] = True
-            foundIsidData = True
-            continue
-        else: # Other line, skip
-            continue
-
-    debug("getIsidUniStruct OUT = {}".format(isidPorts))
-    return isidPorts
 
 
-def idToNumber(idString): # v1 - Convert the sys-id or nickname or mac to a number
-    return int(re.sub(r'[\.:]', '', idString), base=16)
 
-def numberToHexStr(number, nibbleSize=''): # v1 - Convert a number to hex string
-    template = "{:0" + str(nibbleSize) + "x}"
-    return template.format(number)
-
-def numberToBinStr(number, bitSize=''): # v1 - Convert a number to binary string
-    template = "{:0" + str(bitSize) + "b}"
-    return template.format(number)
-
-def numberToNickname(idNumber): # v1 - Convert number to nickname string
-    hexStr = numberToHexStr(idNumber, 5)
-    return hexStr[0] + '.' + '.'.join(hexStr[i:i+2] for i in range(1, len(hexStr), 2))
-
-def numberToSystemId(idNumber): # v1 - Convert number to System ID
-    hexStr = numberToHexStr(idNumber, 12)
-    return '.'.join(hexStr[i:i+4] for i in range(0, len(hexStr), 4))
-
-def numberToMacAddr(idNumber):  # v1 - Convert number to MAC address
-    hexStr = numberToHexStr(idNumber, 12)
-    return ':'.join(hexStr[i:i+2] for i in range(0, len(hexStr), 2))
-
-def nicknameXorMask(nickname, mask): # v1 - Perform XOR of nickname with mask
-    return numberToNickname(idToNumber(nickname) ^ idToNumber(mask))
-
-def systemIdXorMask(sysId, mask): # v1 - Perform XOR of system-id with mask
-    return numberToSystemId(idToNumber(sysId) ^ idToNumber(mask))
-
-def macXorMask(mac, mask): # v1 - Perform XOR of MAC address with mask
-    return numberToMacAddr(idToNumber(mac) ^ idToNumber(mask))
-
-def idReplMask(inId, mask, value, nibbles=12): # v1 - Replaces masked bits with value provided; nibbles = 12 (MAC/SysId) / 5 (nickname)
-    bits = nibbles * 4
-    inIdNumber = idToNumber(inId)
-    maskNumber = idToNumber(mask)
-    notMaskNumber = maskNumber ^ ((1 << bits) - 1)
-    valueNumber = idToNumber(value)
-    maskBinStr = numberToBinStr(maskNumber, bits)
-    valueBinStr = numberToBinStr(valueNumber)
-    debug("inId     = {} / {}".format(numberToHexStr(inIdNumber, nibbles), numberToBinStr(inIdNumber, bits)))
-    debug("mask     = {} / {}".format(numberToHexStr(maskNumber, nibbles), maskBinStr))
-    debug("!mask    = {} / {}".format(numberToHexStr(notMaskNumber, nibbles), numberToBinStr(notMaskNumber, bits)))
-    debug("value    = {} / {}".format(numberToHexStr(valueNumber), valueBinStr))
-
-    valueMaskStr = ''
-    for b in reversed(maskBinStr):
-        if b == '1' and len(valueBinStr):
-            valueMaskStr = valueBinStr[-1] + valueMaskStr
-            valueBinStr = valueBinStr[:-1] # chop last bit off
-        else:
-            valueMaskStr = '0' + valueMaskStr
-    if len(valueBinStr):
-        print "idReplMask() remaining value bits {} not inserted !!".format(len(valueBinStr))
-    valueMaskNumber = int(valueMaskStr, base=2)
-    debug("vmask    = {} / {}".format(numberToHexStr(valueMaskNumber, nibbles), valueMaskStr))
-    maskedIdNumber = inIdNumber & notMaskNumber
-    debug("maskedId = {} / {}".format(numberToHexStr(maskedIdNumber, nibbles), numberToBinStr(maskedIdNumber, bits)))
-    finalIdNumber = maskedIdNumber | valueMaskNumber
-    debug("finalId  = {} / {}".format(numberToHexStr(finalIdNumber, nibbles), numberToBinStr(finalIdNumber, bits)))
-    return finalIdNumber
-
-def nicknameReplMask(nickname, mask, value): # v1 - Replaces nickname masked bits with value provided
-    return numberToNickname(idReplMask(nickname, mask, value, 5))
-
-def systemIdReplMask(sysId, mask, value): # v1 - Replaces system-id masked bits with value provided
-    return numberToSystemId(idReplMask(sysId, mask, value))
-
-def macReplMask(mac, mask, value): # v1 - Replaces MAC address masked bits with value provided
-    return numberToMacAddr(idReplMask(mac, mask, value))
-
-def parseCliCommands(chainStr): # v1 - Parses the CLI commands string and filters out empty lines and comment lines
-    cmdList = map(str.strip, str(chainStr).splitlines())
-    cmdList = filter(None, cmdList) # Filter out empty lines, if any
-    cmdList = [x for x in cmdList if x[0] != "#"] # Strip commented lines out
-    return "\n".join(cmdList)
-
-def takePolicyDomainLock(policyDomain, waitTime=10, retries=6): # v1 - Take lock on opened policy domain
-    # If we fail to get a lock initially, this could be due to a user holding a lock on the same policy domain
-    # Or, it could be another instance of this same workflow running for another switch, doing the same thing
-    # We allow 1 waitTime only for the former (no retries), then we take the lock forcibly
-    # In the latter case, we retry as many times as retries, before failing, but never forcing
-
-    def myClonesRunning(): # Return true if more then 1 instance of myself running
-        runningWorkflowsList = nbiQuery(NBI_Query['listRunningWorkflows'], debugKey='runningWorkflowsList')
-        myselfCount = 0
-        for workflow in runningWorkflowsList:
-            if workflow['workflowName'] == scriptName():
-                myselfCount += 1
-        if myselfCount == 0:
-            exitError("Unexpected result while checking for clones of this workflow running\n{}".format(LastNbiError))
-        if myselfCount > 1:
-            return True
-        return False
-
-    forceFlag = False
-    retriesCount = 0
-    while not nbiMutation(NBI_Query['lockOpenedPolicyDomain'], FORCEFLAG=forceFlag): # Try take lock
-        if LastNbiError == "Conflict":
-            print "Unable to acquire lock on Policy Domain '{}'; re-trying in {} secs".format(policyDomain, waitTime)
-            time.sleep(waitTime)
-            if not myClonesRunning():
-                print "No other clones of myself running, forcing lock on next try"
-                forceFlag = True
-            retriesCount += 1
-            if retriesCount > retries:
-                exitError("Failed to place lock on Policy Domain '{}' after {} retries\n{}".format(policyDomain, retries, LastNbiError))
-        else:
-            exitError("Failed to place lock on Policy Domain '{}'\n{}".format(policyDomain, LastNbiError))
-    print "Placed lock on Policy Domain '{}'".format(policyDomain)
 
 
 #
-# Main:
+# INIT: Init Debug & Sanity flags based on input combos
+#
+try:
+    if emc_vars['userInput_sanity'].lower() == 'enable':
+        Sanity = True
+    elif emc_vars['userInput_sanity'].lower() == 'disable':
+        Sanity = False
+except:
+    pass
+try:
+    if emc_vars['userInput_debug'].lower() == 'enable':
+        Debug = True
+    elif emc_vars['userInput_debug'].lower() == 'disable':
+        Debug = False
+except:
+    pass
+
+
+# --> Insert Ludo Threads library here if required <--
+
+
+# --> XMC Python script actually starts here <--
+
+
+#
+# MAIN:
 #
 def main():
     print "{} version {} on XIQ-SE/XMC version {}".format(scriptName(), __version__, emc_vars["serverVersion"])

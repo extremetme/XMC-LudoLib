@@ -4,6 +4,10 @@ print "Activity: WorkflowActivityTemplate_xx"
 # Written by Ludovico Stevens, TME Extreme Networks
 # What it does
 
+Debug = False    # Enables debug messages
+Sanity = False   # If enabled, config commands are not sent to host (show commands are operational)
+#Family = 'VSP Series'
+
 #
 # IMPORTS:
 #
@@ -11,12 +15,14 @@ print "Activity: WorkflowActivityTemplate_xx"
 #import json
 
 #
+# Functions, replace with sections required...
+#
+
+
+
+#
 # Variables:
 #
-Debug = False    # Enables debug messages
-Sanity = False   # If enabled, config commands are not sent to host (show commands are operational)
-#Family = 'VSP Series'
-
 
 CLI_Dict = {
     'VSP Series': {
@@ -39,11 +45,15 @@ Shell_Dict = { # Dictionary of all Linux shell commands used by this script
 NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData'], IP=deviceIp)
 }
 
-
-#
-# Functions, replace with sections required...
-#
-
+SNMP_Request = { # outValue = snmpGet|snmpSet|snmpWalk(SNMP_Request['<name>'], [instance=<instance>], [value=<value>])
+# SAMPLE Syntax:
+#   'queryName|mibName': {
+#       'oid': <singleOid> | [<listOfOids>],      # For get & set; no leading dot
+#       'asn': <ASN_?>,                           # Only for set, mandatory
+#       'set': <value> | [<listOfValues>],        # Only for set, optional
+#       'map': {'key1': <val1>, 'key2': <val2> }  # Mapping ascii values to int values
+#   },
+}
 
 
 #

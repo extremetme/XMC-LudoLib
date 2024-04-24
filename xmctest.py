@@ -32,6 +32,10 @@ Family = 'VSP Series'
 #Family = 'ISW-Series'
 #Family = 'ISW-Series-Marvell'
 
+
+
+
+
 #vossSegMgmt = LooseVersion(emc_vars["deviceSoftwareVer"]) >= LooseVersion("8.2")
 #debug("vossSegMgmt = {}".format(vossSegMgmt))
 
