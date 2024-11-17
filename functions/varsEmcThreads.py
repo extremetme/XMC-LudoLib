@@ -1,7 +1,7 @@
-##########################################################
-# Ludo Threads library; Version 2.1                      #
-# Written by Ludovico Stevens, TME Extreme Networks      #
-##########################################################
+#
+# XMC Emc threads vars
+# varsEmcThreads.py v3
+#
 
 #
 # IMPORTS:
@@ -35,7 +35,7 @@ try:
     os.chdir(WorkDir)
 except: # If not running on XMC Jython...I develop on my Windows laptop...
     WorkDir = os.getcwd()
-UserName = emc_vars["userName"].replace('.', '_')
+UserName = emc_vars["userName"].replace('.', '_').replace('@', '_')
 MyIP = emc_vars["deviceIP"]
 RegexFileIP = re.compile('^\.[^\.]+\.[^\.]+\.([\d_]+)\.')
 GlobStamps = '.' + UserName + '.' + ThisScript + '.*.stamp'

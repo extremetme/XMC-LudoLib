@@ -8,11 +8,6 @@ Debug = False    # Enables debug messages
 Sanity = False   # If enabled, config commands are not sent to host (show commands are operational)
 #Family = 'VSP Series'
 
-#
-# IMPORTS:
-#
-#import re
-#import json
 
 #
 # Functions, replace with sections required...
@@ -74,6 +69,11 @@ try:
 except:
     pass
 
+#
+# Other Imports:
+#
+#import re
+#import json
 
 #
 # Main:

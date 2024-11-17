@@ -1,0 +1,22 @@
+class SnmpRequest(object):
+    pass
+
+class SnmpVarbind(object):
+    pass
+
+ASN_INTEGER = None
+ASN_OCTET_STR = None
+ASN_OCTET_STR_DEC = None
+ASN_OCTET_STR_HEX = None
+ASN_OCTET_STR_PRINTABLE = None
+ASN_OBJECT_ID = None
+ASN_IPADDRESS = None
+ASN_COUNTER = None
+ASN_UNSIGNED = None
+ASN_GAUGE = None
+ASN_TIMETICKS = None
+ASN_COUNTER64 = None
+ASN_OPAQUE_FLOAT = None
+ASN_OPAQUE_DOUBLE = None
+ASN_OPAQUE_U64 = None
+ASN_OPAQUE_I64 = None

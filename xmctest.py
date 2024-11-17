@@ -4,7 +4,7 @@ import java.util
 import emc_cli      # Own local replica
 import emc_nbi      # Own local replica
 import emc_results  # Own local replica
-print "Offline syntax: py -2 XMC-Python-Ludo-Standard-Library_xxx.py [emc_vars.json|-] [deviceIP] [VSP Series|Summit Series]"
+print "Offline syntax: py -2 xmctest.py [emc_vars.json|-] [deviceIP] [VSP Series|Summit Series]"
 if len(sys.argv) > 1: # Json file as 1st argv
     emc_vars = json.load(open('emc_vars.json')) if sys.argv[1] == '-' else json.load(open(sys.argv[1]))
     if len(sys.argv) > 2: # override deviceIP as 2nd argv
@@ -16,16 +16,69 @@ else:
 print "Offline pointing to deviceIP = {}".format(emc_vars["deviceIP"])
 print "Offline Family Type = {}".format(emc_vars["family"])
 
-# Main functions; always execute
-execfile("XMC-Python-Ludo-Standard-Library.py")
+# Base functions
+execfile("functions/base.py")
+execfile("functions/family.py")
+execfile("functions/rollback.py")
 
-# Thread functions; if needed
-#execfile("XMC-Python-Ludo-Threads-Library.py")
+# CLI functions
+execfile("functions/cli.py")
+execfile("functions/cli2.py")
+execfile("functions/cliAppend.py")
+execfile("functions/cliWarp.py")
+execfile("functions/cliFigw.py")
+execfile("functions/cliVossSave.py")
+execfile("functions/cliVelocityParsing.py")
 
+# API functions
+execfile("functions/apiBase.py")
+execfile("functions/apiXmcHttp.py")
+execfile("functions/apiXmc.py")
+execfile("functions/apiXmcWorkflow.py")
+execfile("functions/apiRestconf.py")
+execfile("functions/apiXiq.py")
 
+# Port functions
+execfile("functions/port.py")
+
+# IP functions
+execfile("functions/ip.py")
+
+# Var functions
+execfile("functions/varsPath.py")
+execfile("functions/varsSite.py")
+execfile("functions/varsCsv.py")
+execfile("functions/varsUd.py")
+
+# Shell function
+execfile("functions/shell.py")
+
+# Syslog
+execfile("functions/syslog.py")
+
+# SNMP
+execfile("functions/snmp.py")
+
+# Misc
+execfile("functions/misc.py")
+
+# Dictionaries
+execfile("functions/cliDict.py")
+execfile("functions/apiXmcDict.py")
+execfile("functions/apiRestconfDict.py")
+execfile("functions/apiXiqDict.py")
+execfile("functions/snmpDict.py")
+
+# Lock semaphore functions
+execfile("functions/lock.py")
 
 Debug = True
 Sanity = False
+
+# Thread functions
+execfile("functions/threads.py")
+
+
 
 #Family = 'ERS Series'
 Family = 'VSP Series'
@@ -33,17 +86,31 @@ Family = 'VSP Series'
 #Family = 'ISW-Series-Marvell'
 
 
+print readCsvToDict("C:\Users\lstevens\Downloads\NodeData-Ludo.csv", lookup="JA122133G-00608")
 
+#pathVarDict = readPathVariables("1.1.1.1")
+#print pathVarLookup("%rootDir%/%sitePath%/%siteName%", pathVarDict)
+
+#vlanIsidDict, isidVlanDict = sendCLI_showRegex(CLI_Dict[Family]['get_vlan_isids'], 'vlanIsidDict,isidVlanDict')
+#sys.exit(0)
+
+
+#xiqapiLogin(username='lstevens+xiq@extremenetworks.com', password='CazzuolaEstrema12')
+#response = xiqapiCall(XIQAPI["listDevices"])
+#if LastXiqApiError:
+#    print "LastXiqApiError = {}".format(LastXiqApiError)
+#print "response =\n{}".format(json.dumps(response, indent=4, sort_keys=True))
+#sys.exit(0)
 
 
 #vossSegMgmt = LooseVersion(emc_vars["deviceSoftwareVer"]) >= LooseVersion("8.2")
 #debug("vossSegMgmt = {}".format(vossSegMgmt))
 
 
-siteVarDict = {u'Site-Voice-isid': u'12990120', u'Sys-Name': u'ADMe-2615', u'Nick-Name': u'0.26.15', u'System-ID': u'020e.0026.0150', u'Ports': u'1/1', u'Mgmt Vlan IP': u'10.200.5.107', u'Site-Data-isid': u'12990666', u'Site-Voice-vlan': u'120', u'Site-Data-vlan': u'666', u'SourceIP': u'10.26.0.115', '__PATH__': u'/World/Development'}
-autoSenseVoiceIsid = siteVarLookup('${Site-Voice-isid}', siteVarDict)
-print "autoSenseVoiceIsid = {}".format(autoSenseVoiceIsid)
-sys.exit(0)
+#siteVarDict = {u'Site-Voice-isid': u'12990120', u'Sys-Name': u'ADMe-2615', u'Nick-Name': u'0.26.15', u'System-ID': u'020e.0026.0150', u'Ports': u'1/1', u'Mgmt Vlan IP': u'10.200.5.107', u'Site-Data-isid': u'12990666', u'Site-Voice-vlan': u'120', u'Site-Data-vlan': u'666', u'SourceIP': u'10.26.0.115', '__PATH__': u'/World/Development'}
+#autoSenseVoiceIsid = siteVarLookup('${Site-Voice-isid}', siteVarDict)
+#print "autoSenseVoiceIsid = {}".format(autoSenseVoiceIsid)
+#sys.exit(0)
 
 
 #sendCLI_configCommand('snmp-server user snmpRO group read sha aes https:// CustomerSecretString// CustomerSecretString//CustomerSecretString // CustomerSecretString')
