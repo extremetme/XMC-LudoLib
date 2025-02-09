@@ -1,8 +1,9 @@
 #
 # CLI functions - (use of rollback requires rollback.py)
-# cli.py v25
+# cli.py v28
 #
 import re
+import time                         # Used by sendCLI_configChain & sendCLI_configChain2 with 'sleep' & 'block directives
 RegexPrompt = re.compile('.*[\?\$%#>]\s?$')
 RegexError  = re.compile(
     '^%|\x07|error|invalid|cannot|unable|bad|not found|not exist|not allowed|no such|out of range|incomplete|failed|denied|can\'t|ambiguous|do not|unrecognized',
@@ -33,6 +34,9 @@ RegexContextPatterns = { # Ported from acli.pl
     ],
 }
 RegexExitInstance = re.compile('^ *(?:exit|back|end|config|save)(?:\s|$)')
+RegexEmbeddedErrMode = re.compile('^#error +(fail|stop|continue) *$')
+RegexEmbeddedSleep = re.compile('^#sleep  +(\d+) *$')
+RegexEmbeddedWarpBlock = re.compile('^#block +(start|execute)(?: +(\d+))? *$')
 Indent = 3 # Number of space characters for each indentation
 LastError = None
 ConfigHistory = []
@@ -130,7 +134,7 @@ def sendCLI_showRegex(cmdRegexStr, debugKey=None, returnCliError=False, msgOnErr
         else: debug("sendCLI_showRegex OUT = {}".format(value))
     return value
 
-def sendCLI_configCommand(cmd, returnCliError=False, msgOnError=None, waitForPrompt=True): # v4 - Send a CLI config command
+def sendCLI_configCommand(cmd, returnCliError=False, msgOnError=None, waitForPrompt=True, historyAppend=True): # v5 - Send a CLI config command
     global LastError
     cmd = re.sub(r':\/\/', ':' + chr(0) + chr(0), cmd) # Mask any https:// type string
     cmd = re.sub(r' *\/\/ *', r'\n', cmd) # Convert "//" to "\n" for embedded // passwords
@@ -138,7 +142,8 @@ def sendCLI_configCommand(cmd, returnCliError=False, msgOnError=None, waitForPro
     cmdStore = re.sub(r'\n.+$', '', cmd, flags=re.DOTALL) # Strip added "\n"+[yn] or // passwords
     if Sanity:
         print "SANITY> {}".format(cmd)
-        ConfigHistory.append(cmdStore)
+        if historyAppend:
+            ConfigHistory.append(cmdStore)
         LastError = None
         return True
     resultObj = emc_cli.send(cmd, waitForPrompt)
@@ -151,34 +156,45 @@ def sendCLI_configCommand(cmd, returnCliError=False, msgOnError=None, waitForPro
                     print "==> Ignoring above error: {}\n\n".format(msgOnError)
                 return False
             abortError(cmd, outputStr)
-        ConfigHistory.append(cmdStore)
+        if historyAppend:
+            ConfigHistory.append(cmdStore)
         LastError = None
         return True
     else:
         exitError(resultObj.getError())
 
-def sendCLI_configChain(chainStr, returnCliError=False, msgOnError=None, waitForPrompt=True, abortOnError=True): # v4 - Send a list of config commands
+def sendCLI_configChain(chainStr, returnCliError=False, msgOnError=None, waitForPrompt=True, historyAppend=True, abortOnError=True): # v6 - Send a list of config commands
     # Syntax: chainStr can be a multi-line string where individual commands are on new lines or separated by the semi-colon ";" character
     # Some embedded directive commands are allowed, these must always begin with the hash "#" character:
     # #error fail       : If a subsequent command generates an error, make the entire script fail
     # #error stop       : If a subsequent command generates an error, do not fail the script but stop processing firther commands
     # #error continue   : If a subsequent command generates an error, ignore it and continue executing remaining commands
+    # #sleep <secs>     : Sleep for specified seconds
     cmdList = configChain(chainStr)
+
+    # Check if last command is a directive, as we have special processing for the last line and don't want directives there
+    while RegexEmbeddedWarpBlock.match(cmdList[-1]) or RegexEmbeddedErrMode.match(cmdList[-1]) or RegexEmbeddedSleep.match(cmdList[-1]):
+        cmdList.pop() # We just pop it off, they serve no purpose as last line anyway
+
     successStatus = True
     for cmd in cmdList[:-1]: # All but last
-        embedded = re.match(r'^#error +(fail|stop|continue) *$', cmd)
-        if embedded:
-            errorMode = embedded.group(1)
+        embeddedErrMode = RegexEmbeddedErrMode.match(cmd)
+        embeddedSleep = RegexEmbeddedSleep.match(cmd)
+        if embeddedErrMode:
+            errorMode = embeddedErrMode.group(1)
             returnCliError = False if errorMode == 'fail' else True
             abortOnError = True if errorMode == 'stop' else False
             continue # After setting the above, we skip the embedded command
-        success = sendCLI_configCommand(cmd, returnCliError, msgOnError)
+        elif embeddedSleep:
+            time.sleep(embeddedSleep.group(1))
+            continue # Next command
+        success = sendCLI_configCommand(cmd, returnCliError, msgOnError, historyAppend=historyAppend)
         if not success:
             successStatus = False
             if abortOnError:
                 return False
     # Last now
-    success = sendCLI_configCommand(cmdList[-1], returnCliError, msgOnError, waitForPrompt)
+    success = sendCLI_configCommand(cmdList[-1], returnCliError, msgOnError, waitForPrompt, historyAppend)
     if not success:
         return False
     return successStatus

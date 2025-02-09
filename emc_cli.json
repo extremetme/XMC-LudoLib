@@ -3,6 +3,14 @@
 		"output": "\n",
 		"error": ""
 	},
+	"show mirror notexistent": {
+		"output": "                           ^\n%% Invalid number detected at '^' marker.\n",
+		"error": ""
+	},
+	"show mirror EAN": {
+		"output": "\nEAN   (Enabled)\n    Description:\n    Mirror to remote IP: 10.8.255.4         VR        : VR-Default\n    From IP            : 10.180.209.41      Ping check: On\n    Priority           : 50\n    Status             : Up. Active\n\nMirrors defined:          2\nMirrors enabled:          1 (Maximum 4)\nHW filter instances used: 0 (Maximum 128)\nHW mirror instances used: 0 ingress, 0 egress (Maximum 4 total, 2 egress)\nRemote IP protocol type:  ERSPAN v1 (0x88be)\n\n",
+		"error": ""
+	},
 	"show users": {
 		"output": "SESSION   USER                                                             ACCESS    IP ADDRESS\nTelnet0   rwa                                                              rwa       10.8.0.158\nConsole                                                                    none      ----------\nSSH3      rwa                                                              rwa       10.8.255.158 (current)\nSSH4      rwa                                                              rwa       10.8.0.158\n",
 		"error": ""

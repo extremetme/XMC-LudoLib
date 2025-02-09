@@ -1,6 +1,6 @@
 #
 # Read Custom Site Variables (requires apiXmc.py and apiXmcDict.py calls: getDeviceSiteVariables + getSiteVariables)
-# varSite.py v8
+# varsSite.py v8
 # 
 import re
 

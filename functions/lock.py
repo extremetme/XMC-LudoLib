@@ -1,15 +1,18 @@
 #
 # Lock functions (based on Markus Nikulski's shareData() function)
-# lock.py v1
+# lock.py v4
 #
 import os
 import time
+import uuid
+import glob
 PauseSleep = 0.1
 LockRootDir = "/dev/shm/"
 LockContextDir = None
-#/dev/shm/<context>/		# Context directory
-#/dev/shm/<context>/lock/	# Lock directory
-#/dev/shm/<context>/lockTime	# File containing lock time
+#/dev/shm/<context>/			# Context directory
+#/dev/shm/<context>/lock/		# Lock directory
+#/dev/shm/<context>/lockTime		# File containing lock time
+#/dev/shm/<context>/queueing.<uuid4>	# Queue file
 
 def exitLockError(errorOutput, sleep=ExitErrorSleep): # v1 - Same as exitError() but releases active lock
     global LockContextDir
@@ -17,7 +20,7 @@ def exitLockError(errorOutput, sleep=ExitErrorSleep): # v1 - Same as exitError()
         yieldLock()
     exitError(errorOutput, sleep)
 
-def acquireLock(workflow=False, activity=False, script=False, execid=False, username=False, lockTime=60, timeout=120): # v1 - Acquire lock on custom context
+def acquireLock(workflow=False, activity=False, script=False, execid=False, username=False, lockTime=60, timeout=120): # v2 - Acquire lock on custom context
     print "\nLOCK requested at {}\n".format(time.ctime())
     global LockContextDir
     context = ''
@@ -48,7 +51,7 @@ def acquireLock(workflow=False, activity=False, script=False, execid=False, user
         debug("acquireLock() contextDir {} already exists".format(contextDir))
 
     # Loop until we get the lock or timeout
-    lockStamp = None
+    lockStamp = queueFile = None
     lockObtained = timedOut = sleepMsg = False
     while not lockObtained or timedOut:
         try: # and acquire lock (smaphore)
@@ -61,6 +64,15 @@ def acquireLock(workflow=False, activity=False, script=False, execid=False, user
             print "\nLOCK acquired at {}\n".format(time.ctime())
             LockContextDir = contextDir
         except: # lock is already taken...
+            if not queueFile: # Create queuing file
+                queueFile = contextDir + "/queueing." + str(uuid.uuid4())
+                try:
+                    with open(queueFile, 'a'):
+                        os.utime(queueFile, None)
+                        debug("acquireLock() set queuing file {}".format(queueFile))
+                except:
+                    debug("acquireLock() unable to set queuing file {}".format(queueFile))
+                    queueFile = None
             timestamp = os.path.getmtime(lockDir) # Get time of existing lock
             if timestamp != lockStamp:
                 startTime = time.time() # This will restart the timeout upon every new lock reservation
@@ -88,14 +100,14 @@ def acquireLock(workflow=False, activity=False, script=False, execid=False, user
                         sleepMsg = False
                     time.sleep(PauseSleep)
 
+    if queueFile: # Delete queuing file
+        os.remove(queueFile)
     return True if lockObtained else False
 
-def yieldLock(): # v1 - Yield existing lock
-    print "\nLOCK released at {}\n".format(time.ctime())
+def yieldLock(): # v2 - Yield existing lock
     global LockContextDir
     if not LockContextDir:
         exitError("yieldLock() cannot be called before acquireLock()")
-
     contextDir = LockContextDir
     debug("yieldLock() contextDir = {}".format(contextDir))
     lockDir = contextDir + "/lock"
@@ -105,8 +117,10 @@ def yieldLock(): # v1 - Yield existing lock
 
     try:
         os.rmdir(lockDir)
+        print "\nLOCK released at {}\n".format(time.ctime())
         debug("yieldLock() deleted lockDir {}".format(lockDir))
     except:
+        print "\nTried & failed to release LOCK... at {}\n".format(time.ctime())
         debug("yieldLock() could not delete lockDir {}".format(lockDir))
     try:
         os.remove(lockTimeFile)
@@ -115,3 +129,16 @@ def yieldLock(): # v1 - Yield existing lock
         debug("yieldLock() could not delete lockTimeFile {}".format(lockTimeFile))
 
     LockContextDir = None
+
+def lockQueue(): # v3 - Check if there is a queue for the lock
+    if not LockContextDir:
+        exitError("lockQueue() cannot be called without holding the lock")
+    contextDir = LockContextDir
+    debug("lockQueue() contextDir = {}".format(contextDir))
+    queueFileGlob = contextDir + "/queueing.*"
+    debug("lockQueue() queueFileGlob = {}".format(queueFileGlob))
+
+    # Returns length of queue waiting to acquire samew lock; 0 = no queue
+    lockQueueLength = len(glob.glob(queueFileGlob))
+    print "\nLOCK queue length = {} at {}\n".format(lockQueueLength, time.ctime())
+    return lockQueueLength

@@ -659,13 +659,13 @@ def systemIdReplMask(sysId, mask, value): # v1 - Replaces system-id masked bits 
 def macReplMask(mac, mask, value): # v1 - Replaces MAC address masked bits with value provided
     return numberToMacAddr(idReplMask(mac, mask, value))
 
-def parseCliCommands(chainStr): # v2 - Parses the CLI commands string and filters out empty lines and comment lines
-    cmdList = map(str.strip, str(chainStr).splitlines())
+def parseCliCommands(chainStr): # v3 - Parses the CLI commands string and filters out empty lines and comment lines
+    cmdList = map(str.rstrip, str(chainStr).splitlines())
     cmdList = filter(None, cmdList) # Filter out empty lines, if any
-    if "RegexIfElse" in globals(): # Valid pragma lines include velocity statements 
-        pragmaRegex = re.compile('^#(error|if|elseif|else|end)')
+    if "RegexEmbeddedIfElse" in globals(): # Valid pragma lines include velocity statements 
+        pragmaRegex = re.compile('^#(error|sleep|if|elseif|else|end|eval|last)') # "#block" missing as we don't use it where we use this function 
     else: # Valid pragma lines do not include velocity statements
-        pragmaRegex = re.compile('^#error')
+        pragmaRegex = re.compile('^#(error|sleep)')
     cmdList = [x for x in cmdList if x[0] != "#" or pragmaRegex.match(x)] # Strip commented lines out, except accepted pragma lines
     return "\n".join(cmdList)
 
@@ -708,12 +708,6 @@ def takePolicyDomainLock(policyDomain, waitTime=10, retries=6): # v1 - Take lock
         else:
             exitError("Failed to place lock on Policy Domain '{}'\n{}".format(policyDomain, LastNbiError))
     print "Placed lock on Policy Domain '{}'".format(policyDomain)
-
-def parseCyphers(chainStr): # v1 - Parses the SSH Cyphers input and filters out empty lines and comment lines
-    cypherList = map(str.strip, str(chainStr).splitlines())
-    cypherList = filter(None, cypherList) # Filter out empty lines, if any
-    cypherList = [x for x in cypherList if x[0] != "#"] # Strip commented lines out
-    return cypherList
 
 def sortNacIpList(ipList): # v1 - Given a list of IPs, returns same list with 1st IP the one set as "Primary" under UserData
     sortedIpList = []

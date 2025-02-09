@@ -1,6 +1,6 @@
 #
-# CLI warp buffer functions (requires cli.py)
-# cliWarp.py v7
+# CLI warp buffer functions (requires cli.py v26)
+# cliWarp.py v9
 #
 import os                           # Used by warpBuffer_execute
 WarpBuffer = []
@@ -12,7 +12,7 @@ def warpBuffer_add(chainStr): # v1 - Preload WarpBuffer with config or configCha
         cmdAdd = re.sub(r'\n.+$', '', cmd) # Strip added CR+y or similar (these are not required when sourcing from file on VOSS and do not work on ERS anyway)
         WarpBuffer.append(cmdAdd)
 
-def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, waitForPrompt=True): # v6 - Appends to existing WarpBuffer and then executes it
+def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, waitForPrompt=True, historyAppend=True): # v8 - Appends to existing WarpBuffer and then executes it
     # Same as sendCLI_configChain() but all commands are placed in a script file on the switch and then sourced there
     # Apart from being fast, this approach can be used to make config changes which would otherwise result in the switch becomming unreachable
     # Use of this function assumes that the connected device (VSP) is already in privExec + config mode
@@ -37,8 +37,8 @@ def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, wai
         'Summit Series': 'terminate process tftpd graceful',
     }
     tftpExecute = { # XMC server IP (TFTP server), Script file to fetch and execute
-        'VSP Series':    'copy "{0}:{1}" /intflash/.script.src -y; source .script.src debug',
-        'Summit Series': 'tftp get {0} "{1}" .script.xsf; run script .script.xsf',
+        'VSP Series':    'copy "{0}:{1}" /intflash/.script.src -y; more .script.src; source .script.src debug',
+        'Summit Series': 'tftp get {0} "{1}" .script.xsf; cat .script.xsf; run script .script.xsf',
         'ERS Series':    'configure network address {0} filename "{1}"',
     }
 
@@ -55,15 +55,17 @@ def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, wai
     if not tftpEnabled:
         if Sanity:
             print "SANITY> {}".format(tftpActivate[Family])
-            ConfigHistory.append(tftpActivate[Family])
+            if historyAppend:
+                ConfigHistory.append(tftpActivate[Family])
         else:
-            sendCLI_configCommand(tftpActivate[Family], returnCliError, msgOnError) # Activate TFTP now
+            sendCLI_configCommand(tftpActivate[Family], returnCliError, msgOnError, historyAppend=historyAppend) # Activate TFTP now
         warpBuffer_add(tftpDeactivate[Family])      # Restore TFTP state on completion
 
     if Sanity:
         for cmd in WarpBuffer:
             print "SANITY(warp)> {}".format(cmd)
-            ConfigHistory.append(cmd)
+            if historyAppend:
+                ConfigHistory.append(cmd)
         LastError = None
         return True
 
@@ -84,7 +86,7 @@ def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, wai
         exitError("Unable to write to TFTP file '{}'".format(tftpFilePath))
 
     # Make the switch fetch the file and execute it
-    success = sendCLI_configChain(tftpExecute[Family].format(xmcServerIP, tftpFileName), returnCliError, msgOnError, waitForPrompt)
+    success = sendCLI_configChain(tftpExecute[Family].format(xmcServerIP, tftpFileName), returnCliError, msgOnError, waitForPrompt, historyAppend=False)
     # Clean up by deleting the file from XMC TFTP directory
     os.remove(tftpFilePath)
     debug("warpBuffer - delete of TFTP config file : {}".format(tftpFilePath))
@@ -92,7 +94,8 @@ def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, wai
     if not success: # In this case some commands might have executed, before the error; these won't be captured in ConfigHistory
         WarpBuffer = []
         return False
-    ConfigHistory.extend(WarpBuffer)
+    if historyAppend:
+        ConfigHistory.extend(WarpBuffer)
     WarpBuffer = []
     LastError = None
     return True

@@ -21,6 +21,7 @@ def readCsvToDict(csvFilePath, lookup=None, delimiter=','): # v7 - Read CSV data
     # {
     #    "1.1.1.1": { "var1": 11, "var2": 21, "var3": 10 },
     #    "2.2.2.2": { "var1": 12, "var2": 22, "var3": 10 },
+    #    "3.3.3.3": { "var1": 13, "var2": 23, "var3": 11 },
     #    "__PATH__": csvFilePath,
     #    "__INDEX__": "ip",
     # }

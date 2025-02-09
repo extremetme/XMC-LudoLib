@@ -1,8 +1,11 @@
 # BEGIN *** WorkflowActivityTemplate_xx ***
 print "Workflow version {} on XIQ-SE/XMC version {}".format(emc_vars["wrkfl_VERSION"], emc_vars["serverVersion"])
 print "Activity: WorkflowActivityTemplate_xx"
-# Written by Ludovico Stevens, TME Extreme Networks
-# What it does
+# Written by Ludovico Stevens, Solution Engineering Extreme Networks
+# Library of functions used in this script can be found here:
+# https://github.com/extremetme/XMC-LudoLib
+
+# What this script does
 
 Debug = False    # Enables debug messages
 Sanity = False   # If enabled, config commands are not sent to host (show commands are operational)

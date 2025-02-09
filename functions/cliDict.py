@@ -96,6 +96,7 @@ CLI_Dict = {
         'check_autosense'            : 'bool://show vlan basic||^4048  onboarding-vlan  private',
         'check_autosense_enabled'    : 'bool://show auto-sense onboarding||^15999999 +4048',
         'check_autosense_nni_up'     : 'bool://show interfaces gigabitEthernet auto-sense||NNI-ISIS-UP',
+        'check_autosense_nni_fail'   : 'bool://show interfaces gigabitEthernet auto-sense||NNI-AUTH-FAIL',
         'check_cvlan_exists'         : 'bool://show vlan basic {0}||^{0}\s', # VLAN id
         'check_fe_tunnel_exists'     : 'bool://show isis logical-interface|| {} ',
         'check_figw_dir_exists'      : 'bool://ls {}||^Listing Directory', # Path
@@ -378,6 +379,14 @@ CLI_Dict = {
                                           ip rsmlt holdup-timer 9999 
                                        exit
                                        ''',
+        'create_vrf_ipvpn'           : # {0} = VRF name, {1} = L3 I-SID
+                                       '''
+                                       router vrf {0}
+                                          ipvpn
+                                          i-sid {1}
+                                          ipvpn enable
+                                       exit
+                                       ''',
         'create_vlan_isid'           : 'vlan i-sid {0} {1}', # {0} = VLAN id; {1} = i-sid '
         'create_vrf'                 : 'ip vrf {}', # VRF name
         'create_vrf_with_id'         : 'ip vrf {0} vrfid {1}', # VRF name, VRF id
@@ -519,6 +528,7 @@ CLI_Dict = {
         'get_platform_vlan_types'    : 'dict://show vlan basic||^(\d+) +.+? +(\S+) +\d+ ',
         'get_sdwan'                  : 'bool://show interfaces gigabitEthernet auto-sense||SD-WAN',
         'get_smlt_role'              : 'str://show virtual-ist||(Slave|Master)',
+        'get_software_version'       : 'str://show sys software | include Version ||^Version : Build ([\d\.]+)[ _]', # If version 9.1.1.0_B006, will return only 9.1.1.0
         'get_spbm_platform_bvlans'   : 'list://show vlan basic||^(\d+) +.+? +spbm-bvlan',
         'get_spbm_global_settings'   : 'list://show isis spbm||(?:(B-VID) +PRIMARY +(NICK) +LSDB +(IP)(?: +(IPV6))?(?: +(MULTICAST))?|^\d+ +(?:(\d+)-(\d+) +\d+ +)?(?:([\da-f]\.[\da-f]{2}\.[\da-f]{2}) +)?(?:disable|enable) +(disable|enable)(?: +(disable|enable))?(?: +(disable|enable))?|^\d+ +(?:primary|secondary) +([\da-f:]+)(?: +([\da-f\.]+))?)',
         'get_static_route_next_hop'  : 'str://show ip route vrf {}||^{} +255.255.255.255 +(\d+\.\d+\.\d+\.\d+) ', # VRF name, Host Route
@@ -727,6 +737,9 @@ CLI_Dict = {
         'save_config'                : 'save configuration',
 
         'check_cvlan_exists'         : 'bool://show vlan||^\S+ +{0}\s', # VLAN id
+        'check_isid_binding_active'  : 'bool://show fabric attach assignments|| {} +Active *$', # I-SID
+        'check_mgmt_ip_dhcp'         : 'bool://show ipconfig vlan {} | include BOOTP||BOOTP Host YES', # VLAN name
+        'check_mgmt_vlan_dynamic'    : 'bool://show vlan {} | include Interface||created dynamically', # VLAN id
 
         'clear_cvlan_isid'           : 'configure vlan {0} delete isid {1}', # {0} = VLAN id; {1} = i-sid 
 
@@ -736,6 +749,7 @@ CLI_Dict = {
             'untag'                  : 'configure vlan {0} add ports {1} untagged',
                                        },
         'create_lacp_lag'            : 'enable sharing {} grouping {} algorithm address-based L3_L4 lacp', # Port1, Port list
+        'create_mirror_ean'          : 'create mirror "EAN"; configure mirror EAN to remote-ip add {} from {}; enable mirror EAN', #Dest IP, From IP
         'create_static_mlt'          : 'enable sharing {} grouping {} algorithm address-based L3_L4', # Port1, Port list
         'create_syslog_server'       : # {0} = IP; {1} = VR; {2} = facility
                                        '''
@@ -745,31 +759,59 @@ CLI_Dict = {
                                        configure log target syslog {0}:514 vr {1} {2} match Any
                                        configure log target syslog {0}:514 vr {1} {2} format timestamp seconds date Mmm-dd event-name condition priority host-name tag-name
                                        ''',
+        'create_ip_gateway'          : 'configure iproute add default {}', # Gateway IP
+        'create_vlan'                : 'create vlan MgmtVlan tag {}', # VLAN id
+        'create_vlan_isid'           : 'configure vlan {0} add isid {1}', # {0} = VLAN id; {1} = i-sid
+        'create_vlan_ip'             : 'configure vlan {} ipaddress {} {}', # VLAN id, IP, Mask
+        'create_vlan_ip_and_gateway' : # VLAN id, IP, Mask, Gateway
+                                       '''
+                                       configure vlan {} ipaddress {} {}
+                                       configure iproute add default {}
+                                       ''',
 
         'delete_all_syslog_servers'  : 'configure syslog delete all',
         'delete_cvlan'               : 'delete vlan {}', # VLAN id
         'delete_cvlan_uni'           : 'configure vlan {0} delete ports {1}', # {0} = VLAN id; {1} = port-list
+        'delete_ip_gateway'          : 'configure iproute delete default {}', # Gateway IP
+        'delete_mirror_ean'          : 'delete mirror EAN',
+        'delete_vlan_ip'             : 'unconfigure vlan {} ipaddress', # VLAN id
         'delete_vm_files'            : 'rm /usr/local/vm/packages/*\ny',
 
+        'disable_fa_message_auth'    : 'configure fabric attach ports all authentication disable',
+        'disable_mirror_ean'         : 'disable mirror EAN',
+        'disable_vlan_dhcp_client'   : 'disable dhcp vlan {}', # VLAN name
+
+        'enable_fa_message_auth'     : 'configure fabric attach ports all authentication enable',
         'enable_igmp_on_vlan'        : 'enable igmp vlan {} IGMPv{}', # VLAN name, IGMP Version 1/2/3
 
+        'get_default_gateway'        : 'str://show iproute vlan {} ||Default Route +(\d+\.\d+\.\d+\.\d+) +\d+ +[UGSumf-]', # VLAN name
+        'get_mirror_ean_to_from_ip'  : 'list-diagonal://show mirror EAN ||(?:\((Enabled|Disabled)\)|Mirror to remote IP: (\d+\.\d+\.\d+\.\d+) |From IP +: (\d+\.\d+\.\d+\.\d+) )', # returns: state, destIP, fromIP
         'get_chassis_mac'            : 'str://show switch | include "System MAC"||^System MAC: +(\S+)',
         'get_cvlan_isid'             : 'str://show vlan {0} fabric attach assignments||^ +{0} +\S+ +(?:Static|Dynamic) +(\d+)', # VLAN id
         'get_cvlan_name'             : 'str://show vlan||^(\S+) +{0}\s', # VLAN id
         'get_ip_vr'                  : 'str://show vlan|| {}[ /].+? (\S+) *$', # IP
         'get_isid_cvlan'             : 'str://show vlan fabric attach assignments||^ +(\d+) +\S+ +Static +{0}', # Isid
         'get_mac_address'            : 'show switch||^System MAC: +(\S+)',
+        'get_mgmt_ip_mask'           : 'int://show vlan | include {0}||{0} +\/(\d\d?) ', # IP address
+        'get_mgmt_vlan_and_mask'     : 'tuple://show vlan | include {0}||(\d+) +{0} +\/(\d\d?) ', # IP address
         'get_mlt_data'               : 'list://show sharing||^ +(?:((?:\d+:)?\d+)(?: +(?:\d+:)?\d+)? +(LACP|Static) +\d+ +)?\w+(?: +\w+)? +((?:\d+:)?\d+)',
+        'get_software_version'       : 'str://show version ||^Image +: .+ version ([\d\.]+)[ -]', # If version 32.7.1.9-patch1-49, will return only 32.7.1.9
+        'get_static_vlan_isids'      : 'dict-both://show fabric attach assignments||^(?:\d[\d:]*)? +(\d+) +\S+ +Static +(\d+) ',
+        'get_vlan_isids'             : 'dict-both://show fabric attach assignments||^(?:\d[\d:]*)? +(\d+) +\S+ +\S+ +(\d+) ',
         'get_vm_data'                : 'list://show vm detail | include Memory|CPUs|Slot||(?:Memory size: +(\d+) MB|CPUs: +(\d)|Slot: +(\d))',
 
         'list_all_vlans'             : 'dict-reverse://show vlan ||^(\S+) +(\d+) ',
         'list_fa_elements'           : 'list://show fabric attach elements||^((?:[\da-f]{2}-){5}[\da-f]{2})-((?:[\da-f]{2}-){3}[\da-f]{2}) +((?:\d+:)?\d+) +(.+?) +(?:\d+|None)\s\S',
 
+        'port_add_vlan_tagged'       : 'configure vlan {} add ports {} tagged', # VLAN id, Ports
+        'port_add_vlan_untagged'     : 'configure vlan {} add ports {} untagged', # VLAN id, Ports
         'port_disable_poe'           : 'disable inline-power ports {}', # Port list
         'port_enable_poe'            : 'enable inline-power ports {}', # Port list
 
         'set_cvlan_isid'             : 'configure vlan {0} add isid {1}', # {0} = VLAN id; {1} = i-sid 
         'set_cvlan_name'             : 'configure vlan {0} name {1}', # {0} = VLAN id; {1} = Name
+        'set_vlan_name'              : 'configure vlan {} name {}', # VLAN id, Name
+        'set_sys_name'               : 'configure snmp sysName {}', # Sysname
 
     },
     'ERS Series': {

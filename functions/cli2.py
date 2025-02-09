@@ -1,10 +1,9 @@
 #
 # CLI functions2 - (requires cli.py; use of #block directive in sendCLI_configChain2() requires cliWarp.py)
-# cli2.py v2
+# cli2.py v4
 #
-import time                         # Used by sendCLI_configChain2 with 'block directive
 
-def sendCLI_configChain2(chainStr, returnCliError=False, msgOnError=None, waitForPrompt=True, abortOnError=True): # v2 - Enhanced sendCLI_configChain with embedded directives
+def sendCLI_configChain2(chainStr, returnCliError=False, msgOnError=None, waitForPrompt=True, abortOnError=True): # v3 - Enhanced sendCLI_configChain with embedded directives
     # Syntax: chainStr can be a multi-line string where individual commands are on new lines or separated by the semi-colon ";" character
     # Some embedded directive commands are allowed, these must always begin with the hash "#" character:
     # #error fail       : If a subsequent command generates an error, make the entire script fail
@@ -17,12 +16,11 @@ def sendCLI_configChain2(chainStr, returnCliError=False, msgOnError=None, waitFo
     #                     If this directive is not seen, and the "#block start" was seen, all commands from the start of
     #                     block section to the last command in the list will be sourced locally on the switch using warpBuffer_execute()
     #                     [n] = Optional number of seconds to sleep after block execution
+    # #sleep <secs>     : Sleep for specified seconds
     cmdList = configChain(chainStr)
-    regexWarpBlock = re.compile('^#block +(start|execute)(?: +(\d+))? *$')
-    regexErrMode = re.compile('^#error +(fail|stop|continue) *$')
 
     # Check if last command is a directive, as we have special processing for the last line and don't want directives there
-    if regexWarpBlock.match(cmdList[-1]) or regexErrMode.match(cmdList[-1]):
+    while RegexEmbeddedWarpBlock.match(cmdList[-1]) or RegexEmbeddedErrMode.match(cmdList[-1]) or RegexEmbeddedSleep.match(cmdList[-1]):
         cmdList.pop() # We just pop it off, they serve no purpose as last line anyway
 
     successStatus = True
@@ -31,8 +29,9 @@ def sendCLI_configChain2(chainStr, returnCliError=False, msgOnError=None, waitFo
     warpBlockExec = False
     warpBlockWait = 0
     for cmd in cmdList[:-1]: # All but last line
-        embeddedWarpBlock = regexWarpBlock.match(cmd)
-        embeddedErrMode = regexErrMode.match(cmd)
+        embeddedWarpBlock = RegexEmbeddedWarpBlock.match(cmd)
+        embeddedErrMode = RegexEmbeddedErrMode.match(cmd)
+        embeddedSleep = RegexEmbeddedSleep.match(cmd)
         if embeddedWarpBlock and "warpBuffer_execute" in globals():
             warpBlockCmd = embeddedWarpBlock.group(1)
             warpBlockTimer = embeddedWarpBlock.group(2)
@@ -52,6 +51,10 @@ def sendCLI_configChain2(chainStr, returnCliError=False, msgOnError=None, waitFo
             debug("sendCLI_configChain2() directive #error {}".format(errorMode))
             returnCliError = False if errorMode == 'fail' else True
             abortOnError = True if errorMode == 'stop' else False
+            continue # Next command
+        elif embeddedSleep:
+            if not warpBlock:
+                time.sleep(embeddedSleep.group(1))
             continue # Next command
         if warpBlock:
             warpBuffer_add(cmd)

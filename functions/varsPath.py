@@ -1,10 +1,10 @@
 #
 # Read Path Variables %rootDir%, %sitepath% and %sitename% (requires apiXmc.py and apiXmcDict.py call getSitePath)
-# varsPath.py v1
+# varsPath.py v2
 #
 import os
 
-def readPathVariables(deviceIp, rootDir='/'): # v1 - Obtains a dict of path variables starting from Site of deviceIp
+def readPathVariables(deviceIp, rootDir='/'): # v2 - Obtains a dict of path variables starting from Site of deviceIp
     if not os.path.exists(rootDir):
         exitError("readPathVariables: input root path '{}' does not exist".format(rootDir))
     sitePath = nbiQuery(NBI_Query['getSitePath'], debugKey='sitePath', returnKeyError=True, IP=deviceIp)
@@ -21,7 +21,7 @@ def readPathVariables(deviceIp, rootDir='/'): # v1 - Obtains a dict of path vari
         'sitePath': pathList[-1],
         'siteName': "/".join(pathList[:-1]),
     }
-    debug("readSiteCustomVariables pathVarDict = {}".format(pathVarDict))
+    debug("readPathVariables pathVarDict = {}".format(pathVarDict))
     return pathVarDict
 
 def pathVarLookup(inputStr, pathVarDict): # v1 - Replaces path variables %rootDir%, %sitepath% and %sitename% in the input string
