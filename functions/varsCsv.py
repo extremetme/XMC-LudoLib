@@ -1,6 +1,6 @@
 #
 # CSV data input
-# varsCsv.py v14
+# varsCsv.py v17
 #
 import os.path
 import csv
@@ -8,7 +8,7 @@ import json
 import re
 import io
 
-def readCsvToDict(csvFilePath, lookup=None, delimiter=','): # v7 - Read CSV data file, return dict with data
+def readCsvToDict(csvFilePath, lookup=None, delimiter=','): # v8 - Read CSV data file, return dict with data
     # It is expected that the 1st CSV row has the column value keys
     # And that the index to data are the values in column 0
     # Row0 Column0 is returned as 2nd value
@@ -70,7 +70,7 @@ def readCsvToDict(csvFilePath, lookup=None, delimiter=','): # v7 - Read CSV data
                     if not lookup or key == lookup:
                         while len(rowcopy) < len(valueKeys): # In case CSV row is missing last values
                             rowcopy.append('') # Add empty values so that we get all keys in the zip below
-                        csvVarDict[key] = dict(zip(valueKeys, map(str.strip, rowcopy)))
+                        csvVarDict[key] = dict(zip(valueKeys, [re.sub(r'^"|"$', '', x.strip()) for x in rowcopy])) # Remove double quotes if these were used
                         if lookup:
                             csvVarDict['__LOOKUP__'] = key
 
@@ -91,7 +91,7 @@ def readCsvToDict(csvFilePath, lookup=None, delimiter=','): # v7 - Read CSV data
                             continue
                         while len(rowcopy) < len(valueKeys): # In case CSV row is missing last values
                             rowcopy.append('') # Add empty values so that we get all keys in the zip below
-                        rowDict = dict(zip(valueKeys, map(str.strip, rowcopy)))
+                        rowDict = dict(zip(valueKeys, [re.sub(r'^"|"$', '', x.strip()) for x in rowcopy])) # Remove double quotes if these were used
                         if rowDict[peerVar] == csvVarDict[lookup][peerVar]:
                             if '__PEER__' in csvVarDict:
                                 exitError("readCsvToDict: CSV file {} intended to have unique peer for variable {}, but 3 found: {}, {}, {}".format(csvFilePath, peerVar, csvVarDict['__LOOKUP__'], csvVarDict['__PEER__'], key))
@@ -103,19 +103,25 @@ def readCsvToDict(csvFilePath, lookup=None, delimiter=','): # v7 - Read CSV data
     debug("readCsvToDict() csvVarDict =\n{}".format(json.dumps(csvVarDict, indent=4, sort_keys=True)))
     return csvVarDict
 
-def csvVarLookup(inputStr, csvVarDict, lookup): # v9 - Replaces embedded $<csv-variables> or $(csv-variables) in the input string
+def csvVarLookup(inputStr, csvVarDict, lookup): # v11 - Replaces embedded $<csv-variables> or $(csv-variables) in the input string
     csvVarsUsed = {x.group(1):1 for x in list(re.finditer(r'\$<((?:peer:)?[\w -]+)>', inputStr)) + list(re.finditer(r'\$\(((?:peer:)?[\w -]+)\)', inputStr))}
     outputStr = inputStr
     if csvVarsUsed:
         debug("csvVarLookup csvVarsUsed = {}".format(csvVarsUsed))
         peerVarList = [x for x in csvVarsUsed if re.match(r'peer:', x)]
         if peerVarList and '__PEER__' not in csvVarDict:
-            exitError("csvVarLookup for {}: the following peer variables are used but no peer node found in CSV file {}:\n{}".format(lookup, csvVarDict['__PATH__'], peerVarList))
+            if '__PATH__' in csvVarDict:
+                exitError("csvVarLookup for {}: the following peer variables are used but no peer node found in CSV file {}:\n{}".format(lookup, csvVarDict['__PATH__'], peerVarList))
+            else:
+                exitError("csvVarLookup for {}: the following peer variables are used but no peer node found in database data:\n{}".format(lookup, peerVarList))
         missingVarList = [x for x in csvVarsUsed if not re.match(r'peer:', x) and (lookup not in csvVarDict or x not in csvVarDict[lookup])]
         debug("csvVarLookup missingVarList = {}".format(missingVarList))
         if missingVarList:
             if csvVarDict:
-                exitError("csvVarLookup for {}: the following variables were not found in the CSV file {}:\n{}".format(lookup, csvVarDict['__PATH__'], missingVarList))
+                if '__PATH__' in csvVarDict:
+                    exitError("csvVarLookup for {}: the following variables were not found in the CSV file {}:\n{}".format(lookup, csvVarDict['__PATH__'], missingVarList))
+                else:
+                    exitError("csvVarLookup for {}: the following variables were not found in database data:\n{}".format(lookup, missingVarList))
             else:
                 exitError("csvVarLookup for {}: no CSV file provided but the following variables were found requiring CSV lookup:\n{}".format(lookup, missingVarList))
         for csvVar in csvVarsUsed:

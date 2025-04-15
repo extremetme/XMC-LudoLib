@@ -16,6 +16,7 @@ import sys
 import glob
 import re
 import time
+import shutil
 import argparse
 
 #
@@ -24,10 +25,13 @@ import argparse
 Debug = False    # Enables debug messages
 Sanity = False   # If enabled, config commands are not sent to host (show commands are operational)
 FuncPath = "C:/Users/lstevens/Scripts/X-Python/XMC/functions" # Path of latest library files
+ScriptVersionsFolder = "./versions"
+RegexScriptVersion = re.compile("__version__ *= *'(\d+\.\d+)'")
 RegexLibFile = re.compile('# (\w+\.py)(?: +v(\d+))?')
-RegexFunction = re.compile('def (\w+)\(.+?\): +# +v(\d+)')
+RegexFunction = re.compile('def (\w+)\(.*?\): +# +v(\d+)')
 RegexBanner = re.compile('# \w+')
-RegexMain = re.compile('def main():')
+RegexMain = re.compile('(?:def main\(\):|# Main:|# INIT:)')
+BannerLength = 100
 
 
 #
@@ -87,7 +91,7 @@ def getLatestFuncVersions(funcPath): # Read latest library function versions
                     funcDict[fileKey]['functions'][function.group(1)] = function.group(2)
 
     print "\nLatest libfiles and functions"
-    print "=" * 90
+    print "=" * BannerLength
     for fileKey in sorted(funcDict.keys()):
         print "{:34} version {:>4}".format(fileKey, funcDict[fileKey]['version'])
         for function in sorted(funcDict[fileKey]['functions'].keys()):
@@ -98,22 +102,29 @@ def getLatestFuncVersions(funcPath): # Read latest library function versions
 
 def getScriptVersions(filePath): # Read input script function versions
     scriptDict = {
-#       <libfile.py>: {
-#           version: <version>,
-#           functions: {
-#               <func1>: <version>,
-#               <func2>: <version>,
+        'version': None,
+        'libfiles': {
+#           <libfile.py>: {
+#               version: <version>,
+#               functions: {
+#                   <func1>: <version>,
+#                   <func2>: <version>,
+#               }
 #           }
-#       }
+        }
     }
     with open(filePath, 'r') as f:
         fileKey = 'orphan'
         for line in f:
+            scriptVersion = RegexScriptVersion.match(line)
+            if scriptVersion:
+                scriptDict['version'] = scriptVersion.group(1)
+                continue
             libFile = RegexLibFile.match(line)
             if libFile:
                 #debug("LIBR: {}".format(line))
                 fileKey = libFile.group(1)
-                scriptDict[fileKey] = {'version': libFile.group(2), 'functions': {}}
+                scriptDict['libfiles'][fileKey] = {'version': libFile.group(2), 'functions': {}}
                 continue
             if RegexBanner.match(line):
                 #debug("BANN: {}".format(line))
@@ -124,16 +135,16 @@ def getScriptVersions(filePath): # Read input script function versions
                 break
             function = RegexFunction.match(line)
             if function:
-                if fileKey == 'orphan' and fileKey not in scriptDict:
-                    scriptDict[fileKey] = {'version': None, 'functions': {}}
-                scriptDict[fileKey]['functions'][function.group(1)] = function.group(2)
+                if fileKey == 'orphan' and fileKey not in scriptDict['libfiles']:
+                    scriptDict['libfiles'][fileKey] = {'version': None, 'functions': {}}
+                scriptDict['libfiles'][fileKey]['functions'][function.group(1)] = function.group(2)
 
-    print "\nLibfiles and function versions used by script '{}'".format(os.path.basename(filePath))
-    print "=" * 90
-    for fileKey in sorted(scriptDict.keys()):
-        print "{:34} version {:>4}".format(fileKey, scriptDict[fileKey]['version'])
-        for function in sorted(scriptDict[fileKey]['functions'].keys()):
-            print "    {:30} version {:>4}".format(function + "()", scriptDict[fileKey]['functions'][function])
+    print "\nLibfiles and function versions used by script '{}' version {}".format(os.path.basename(filePath), scriptDict['version'])
+    print "=" * BannerLength
+    for fileKey in sorted(scriptDict['libfiles'].keys()):
+        print "{:34} version {:>4}".format(fileKey, scriptDict['libfiles'][fileKey]['version'])
+        for function in sorted(scriptDict['libfiles'][fileKey]['functions'].keys()):
+            print "    {:30} version {:>4}".format(function + "()", scriptDict['libfiles'][fileKey]['functions'][function])
         print
     return scriptDict
 
@@ -141,16 +152,16 @@ def getScriptVersions(filePath): # Read input script function versions
 def checkVersionMatrix(funcDict, filename, scriptDict): # Print matrix comparison of function versions
     newerVersionsExist = False
     canUpdateFlag = True
-    print "\nMatrix of libfiles and function versions used by script '{}'".format(os.path.basename(filename))
-    print "=" * 90
-    for fileKey in sorted(scriptDict.keys()):
-        line = "{:34} version {:>4}".format(fileKey, scriptDict[fileKey]['version'])
-        if scriptDict[fileKey]['version']:
+    print "\nMatrix of libfiles and function versions used by script '{}' version {}".format(os.path.basename(filename), scriptDict['version'])
+    print "=" * BannerLength
+    for fileKey in sorted(scriptDict['libfiles'].keys()):
+        line = "{:34} version {:>4}".format(fileKey, scriptDict['libfiles'][fileKey]['version'])
+        if scriptDict['libfiles'][fileKey]['version']:
             line += " - "
             if fileKey in funcDict:
-                if scriptDict[fileKey]['version'] == funcDict[fileKey]['version']:
+                if scriptDict['libfiles'][fileKey]['version'] == funcDict[fileKey]['version']:
                     line += "is latest"
-                elif scriptDict[fileKey]['version'] < funcDict[fileKey]['version']:
+                elif int(scriptDict['libfiles'][fileKey]['version']) < int(funcDict[fileKey]['version']):
                     line += "latest is v{:4}".format(funcDict[fileKey]['version'])
                     newerVersionsExist = True
                 else:
@@ -160,8 +171,8 @@ def checkVersionMatrix(funcDict, filename, scriptDict): # Print matrix compariso
                 line += "libfile not found"
                 canUpdateFlag = False
         print line
-        for function in sorted(scriptDict[fileKey]['functions'].keys()):
-            line = "    {:30} version {:>4} - ".format(function + "()", scriptDict[fileKey]['functions'][function])
+        for function in sorted(scriptDict['libfiles'][fileKey]['functions'].keys()):
+            line = "    {:30} version {:>4} - ".format(function + "()", scriptDict['libfiles'][fileKey]['functions'][function])
             if fileKey in funcDict and function in funcDict[fileKey]['functions']:
                 funcKey = fileKey
                 searchFlag = False
@@ -173,9 +184,9 @@ def checkVersionMatrix(funcDict, filename, scriptDict): # Print matrix compariso
                         searchFlag = True
                         break
             if funcKey and function in funcDict[funcKey]['functions']:
-                if scriptDict[fileKey]['functions'][function] == funcDict[funcKey]['functions'][function]:
+                if scriptDict['libfiles'][fileKey]['functions'][function] == funcDict[funcKey]['functions'][function]:
                     line += "is latest      "
-                elif scriptDict[fileKey]['functions'][function] < funcDict[funcKey]['functions'][function]:
+                elif int(scriptDict['libfiles'][fileKey]['functions'][function]) < int(funcDict[funcKey]['functions'][function]):
                     line += "latest is v{:4}".format(funcDict[funcKey]['functions'][function])
                     newerVersionsExist = True
                 else:
@@ -203,6 +214,15 @@ def checkVersionMatrix(funcDict, filename, scriptDict): # Print matrix compariso
     return newerVersionsExist, canUpdateFlag
 
 
+def incrementVersion(version): # Increments script version by 0.01; assumes versions in formay y.xx
+    major, minor = [int(v) for v in version.split('.', 1)]
+    minor += 1
+    if minor > 99: # Roll over major..
+        major += 1
+        minor = 0
+    return "{}.{:02}".format(major, minor)
+
+
 def updateScript(funcPath, funcDict, filePath): # Perform update of script file
     if not re.search(r'[\/]$', funcPath):
         funcPath += "/"
@@ -223,55 +243,184 @@ def updateScript(funcPath, funcDict, filePath): # Perform update of script file
 
     # Overwrite original file now
     libFilesUpdatedList = []
-    commentLinesList = []
+    miscPyFuncUpdatedList = []
+    cachedLinesList = []
+    cachedLinesFlag = False
+    originalScriptVersion = newScriptVersion = None
     emptyLines = 0
-    libFileReplaceFlag = libFileJustSetFlag = False
+    replaceFlag = libFileJustSetFlag = miscLibFileProcessFlag = False
     with open(originalFile, 'r') as f, open(writeFile, 'w') as n:
         for line in f:
+            if not originalScriptVersion:
+                scriptVersion = RegexScriptVersion.match(line)
+                if scriptVersion:
+                    originalScriptVersion = scriptVersion.group(1)
+                    newScriptVersion = incrementVersion(originalScriptVersion)
+                    line = re.sub(r'(\d+\.\d+)', newScriptVersion, line)
+                    debug("Script version increased from {} to {}".format(originalScriptVersion, newScriptVersion))
             libFile = RegexLibFile.match(line)
+            if miscLibFileProcessFlag:
+                function = RegexFunction.match(line)
             if libFile:
-                #debug("LIBR: {}".format(line))
+                replaceFlag = False
                 fileKey = libFile.group(1)
-                if libFile.group(2) < funcDict[fileKey]['version']:
-                    debug("Replacing: {}".format(fileKey))
+                debug("LIBFILE {} : {}".format(fileKey, line.rstrip()))
+                if fileKey == "misc.py":
+                    miscLibFileProcessFlag = True
+                elif libFile.group(2) and int(libFile.group(2)) < int(funcDict[fileKey]['version']):
+                    # If we have a libFile version and the version is old, then we replace libFile
+                    # Misc.pl will always be skipped as it has no version
+                    debug("*** Replacing: {}".format(fileKey))
                     libFilesUpdatedList.append(fileKey)
-                    libFileReplaceFlag = libFileJustSetFlag = True
-                    commentLinesList = []
+                    replaceFlag = libFileJustSetFlag = True
+                    miscLibFileProcessFlag = False
+
+                    # Restore empty lines only
+                    if cachedLinesList:
+                        debug("lib printing empty cachedLinesList lines: {}".format(",".join([x.rstrip() for x in cachedLinesList if not re.match(r'\s*$', x)])))
+                    while cachedLinesList:
+                        cachedLine = cachedLinesList.pop(0)
+                        if not re.match(r'\s*$', cachedLine):
+                            break
+                        n.write(cachedLine)
+                    cachedLinesList = []
+                    cachedLinesFlag = False
+
+                    # Open libFile, fully read it, and fully write it
                     libPath = funcPath + fileKey
                     with open(libPath, 'r') as l:
                         lib = l.read()
                     n.write(lib)
-                else:
-                    commentLinesList.append(line)
+                    continue
+                else: # If we don't need to replace the libFile, we store these initial comment lines
+                    miscLibFileProcessFlag = False
+
+            elif miscLibFileProcessFlag and function: # Parsing of misc.py individual functions
+                funcName = function.group(1)
+                debug("MISC.PY FUNCTION : {}".format(funcName))
+                if int(function.group(2)) < int(funcDict[fileKey]['functions'][funcName]):
+                    # If we have a function which is old, then we replace the function
+                    debug("*** Replacing misc.py function: {}".format(funcName))
+                    miscPyFuncUpdatedList.append(funcName)
+                    replaceFlag = True
+
+                    # Restore empty lines only
+                    if cachedLinesList:
+                        debug("misc printing empty cachedLinesList lines: {}".format(",".join([x.rstrip() for x in cachedLinesList if not re.match(r'\s*$', x)])))
+                    while cachedLinesList:
+                        cachedLine = cachedLinesList.pop(0)
+                        if not re.match(r'\s*$', cachedLine):
+                            break
+                        n.write(cachedLine)
+                    cachedLinesList = []
+                    cachedLinesFlag = False
+
+                    # Open misc.py libFile, fully read it, and fully write it
+                    libPath = funcPath + "misc.py"
+                    writeFuncFlag = False
+                    emptyLineList = []
+                    with open(libPath, 'r') as l:
+                        for mLine in l:
+                            mFunction = RegexFunction.match(mLine)
+                            if mFunction:
+                                if mFunction.group(1) == funcName: # We got to the function we need to replace
+                                    n.write(mLine)
+                                    writeFuncFlag = True
+                                else: # A different function, we skip and stop replacing if we were
+                                    writeFuncFlag = False
+                            elif re.match(r'import ', mLine): # Some functions are preceded by import statements..
+                                writeFuncFlag = False
+                            elif writeFuncFlag:
+                                if re.match(r'\s*$', mLine):
+                                    emptyLineList.append(mLine)
+                                else:
+                                    while emptyLineList:
+                                        n.write(emptyLineList.pop(0))
+                                    n.write(mLine)
+                    continue
+                else: # If we don't need to replace the misc.py function
+                    replaceFlag = False
+
+            elif RegexMain.match(line):
+                # Restore any commented line we pushed on stack
+                if cachedLinesList:
+                    debug("main printing cachedLinesList: {}".format(",".join([x.rstrip() for x in cachedLinesList])))
+                while cachedLinesList:
+                    n.write(cachedLinesList.pop(0))
+                cachedLinesFlag = False
+                debug("MAIN: {}".format(line))
+                replaceFlag = False
+
+            elif re.match(r'#\s*$', line) and libFileJustSetFlag: # Empty banner line immediately following the RegexLibFile match
+                debug("BANN Skip: {}".format(line.rstrip()))
+                libFileJustSetFlag = False # and we skip it..
                 continue
-            if re.match(r'#', line):
-                #debug("BANN: {}".format(line))
-                if libFileJustSetFlag: # Banner lines immediately following the RegexLibFile match
-                    libFileJustSetFlag = False
+
+            elif re.match(r'#', line) or (replaceFlag and re.match(r'\s*$', line)): # Comment line (always) or empty line (only when replacing)
+                # Could be end of lib section, maybe not.. so we cache these lines
+                if line.rstrip():
+                    if emptyLines:
+                        debug("Cache {} empty lines".format(emptyLines))
+                        emptyLines = 0
+                    debug("BANN cache line: {}".format(line.rstrip()))
+                    cachedLinesFlag = True
                 else:
-                    libFileReplaceFlag = False
-                    while emptyLines > 0:
-                        debug("Write empty line")
-                        n.write("\n")
-                        emptyLines -= 1
-                    commentLinesList.append(line)
-                continue
-            if RegexMain.match(line):
-                #debug("MAIN: {}".format(line))
-                break
-            if libFileReplaceFlag:
-                if re.match(r'^\s*$', line):
                     emptyLines += 1
-                else:
-                    emptyLines = 0
-            else:
-                while commentLinesList:
-                    n.write(commentLinesList.pop(0))
+                cachedLinesList.append(line)
+                continue
+
+            if replaceFlag:
+                if cachedLinesFlag:
+                    debug("Flushing BANN/Empty cached lines")
+                cachedLinesList = [] # Flush any cached lines
+                cachedLinesFlag = False
+
+            else: # Preserve lines, only if not replacing them
+                # Restore any commented line we pushed on stack
+                if cachedLinesList:
+                    debug("no replace, printing cachedLinesList: {}".format(",".join([x.rstrip() for x in cachedLinesList])))
+                while cachedLinesList:
+                    n.write(cachedLinesList.pop(0))
+                cachedLinesFlag = False
+                # And write over the line at hand
                 n.write(line)
-        while commentLinesList:
-            n.write(commentLinesList.pop(0))
+
+        # Restore any commented line we pushed on stack
+        if cachedLinesList:
+            debug("exit printing cachedLinesList: {}".format(",".join([x.rstrip() for x in cachedLinesList])))
+        while cachedLinesList:
+            n.write(cachedLinesList.pop(0))
+
+    if replaceFlag:
+        print "\nERROR: Reached end of file and replaceFlag was still true; '{}' is corrupted!!\n".format(writeFile)
+        return
+
+    if not Sanity and originalScriptVersion:
+        # Create versions directory if non existent
+        if not os.path.exists(ScriptVersionsFolder):
+            try:
+                os.makedirs(ScriptVersionsFolder)
+                print "Created script versions directory '{}'".format(ScriptVersionsFolder)
+            except Exception as e:
+                print "ERROR! Could not create script versions directory '{}'\n{}".format(ScriptVersionsFolder, e)
+
+        # Copy .bak file to version storage folder
+        backupOldVersionFile = re.sub(r'\.bak', '_{}.bak'.format(originalScriptVersion), originalFile) # inputscript_<oldVer>.py
+        verBackupFile = "{}/{}".format(ScriptVersionsFolder,backupOldVersionFile)
+        if os.path.exists(verBackupFile):
+            print "ERROR! There is already a version '{}' backup file: '{}'".format(originalScriptVersion, verBackupFile)
+        else:
+            try:
+                shutil.copyfile(originalFile, verBackupFile)
+                print "Made version {} backup of original script: '{}'".format(originalScriptVersion, verBackupFile)
+            except Exception as e:
+                print "ERROR! Could make version {} backup of original scrip\n{}".format(originalScriptVersion, e)
 
     print "Updated script file '{}' with latest library functions: {}".format(writeFile, libFilesUpdatedList)
+    if miscPyFuncUpdatedList:
+        print "Updated script file '{}' with latest misc.py functions: {}".format(writeFile, miscPyFuncUpdatedList)
+    if newScriptVersion:
+        print "Updated script file '{}' now has version {}".format(writeFile, newScriptVersion)
 
 
 #

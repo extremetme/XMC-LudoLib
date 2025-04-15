@@ -1,6 +1,6 @@
 #
 # CLI functions - (use of rollback requires rollback.py)
-# cli.py v28
+# cli.py v30
 #
 import re
 import time                         # Used by sendCLI_configChain & sendCLI_configChain2 with 'sleep' & 'block directives
@@ -39,6 +39,7 @@ RegexEmbeddedSleep = re.compile('^#sleep  +(\d+) *$')
 RegexEmbeddedWarpBlock = re.compile('^#block +(start|execute)(?: +(\d+))? *$')
 Indent = 3 # Number of space characters for each indentation
 LastError = None
+LastPrompt = ''
 ConfigHistory = []
 
 def cliError(outputStr): # v1 - Check command output for CLI error message
@@ -47,21 +48,25 @@ def cliError(outputStr): # v1 - Check command output for CLI error message
     else:
         return False
 
-def cleanOutput(outputStr): # v5 - Remove echoed command and final prompt from output
+def cleanOutput(outputStr): # v6 - Remove echoed command and final prompt from output
     if re.match(r'Error:', outputStr): # Case where emc_cli.send timesout: "Error: session exceeded timeout: 30 secs"
         return outputStr
     outputLines = outputStr.splitlines()
     lastLine = outputLines[-1]
     if RegexPrompt.match(lastLine):
+        global LastPrompt
+        LastPrompt = lastLine
         return '\n'.join(outputLines[1:-1])
     else:
         return '\n'.join(outputLines[1:])
 
-def configChain(chainStr): # v2 - Produces a list of a set of concatenated commands (either with ';' or newlines)
+def configChain(chainStr): # v3 - Produces a list of a set of concatenated commands (either with ';' or newlines)
     chainStr = re.sub(r'\n(\w)(\x0d?\n|\s*;|$)', chr(0) + r'\1\2', chainStr) # Mask trailing "\ny" or "\nn" on commands before making list
     # Checking for \x0d? is necessary when DOS text files are transferred to XIQ-SE, and read and processed locally..
+    chainStr = re.sub(r'(\".*?\")', lambda m: m.group(1).replace(';', chr(ord(";")|128)), chainStr) # Mask ";" inside double quotes section
     cmdList = map(str.strip, re.split(r'[;\n]', chainStr))
     cmdList = filter(None, cmdList) # Filter out empty lines, if any
+    cmdList = [x.replace(chr(ord(";")|128), ';') for x in cmdList] # Unmask after list made
     cmdList = [re.sub(r'\x00(\w)(\x0d?\n|$)', r'\n\1\2', x) for x in cmdList] # Unmask after list made
     return cmdList
 
@@ -97,9 +102,21 @@ def formatOutputData(data, mode): # v3 - Formats output data for both sendCLI_sh
         RuntimeError("formatOutputData: invalid scheme type '{}'".format(mode))
     return value
 
-def sendCLI_showCommand(cmd, returnCliError=False, msgOnError=None): # v2 - Send a CLI show command; return output
+def sendCLI_showCommand(cmd, returnCliError=False, msgOnError=None, retries=0, retryDelay=0): # v3 - Send a CLI show command; return output
     global LastError
-    resultObj = emc_cli.send(cmd)
+    if retries and retryDelay: # To be used on very first CLI command sent to device
+        while retries >= 0:
+            resultObj = emc_cli.send(cmd)
+            # If it fails to connect, the following is automatically printed to the session: "Failed to connect to <IP-address>"
+            if resultObj.isSuccess():
+                emc_results.setStatus(emc_results.Status.SUCCESS) # Clears failed status on XIQ-SE script/workflow activity
+                retries = -1 # All good, come out of while loop
+            else:
+                print "Retrying in {} seconds".format(retryDelay)
+                time.sleep(retryDelay)
+                retries -= 1
+    else:
+        resultObj = emc_cli.send(cmd)
     if resultObj.isSuccess():
         outputStr = cleanOutput(resultObj.getOutput())
         if outputStr and cliError("\n".join(outputStr.split("\n")[:4])): # If there is output, check for error in 1st 4 lines only (timestamp banner might shift it by 3 lines)

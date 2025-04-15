@@ -49,21 +49,6 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 ''',
         'key': 'device'   
     },
-    'getDeviceUserData': {
-        'json': '''
-                {
-                  network {
-                    device(ip: "<IP>") {
-                      userData1
-                      userData2
-                      userData3
-                      userData4
-                    }
-                  }
-                }
-                ''',
-        'key': 'device'
-    },
     'getSiteVariables': {
         'json': '''
                 {
@@ -81,6 +66,21 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 }
                 ''',
         'key': 'siteByLocation'
+    },
+    'getDeviceUserData': {
+        'json': '''
+                {
+                  network {
+                    device(ip: "<IP>") {
+                      userData1
+                      userData2
+                      userData3
+                      userData4
+                    }
+                  }
+                }
+                ''',
+        'key': 'device'
     },
     'getSiteList': {
         'json': '''
@@ -147,20 +147,6 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 ''',
         'key': 'authCred'
     },
-    'getWorkflowList': {
-        'json': '''
-                {
-                  workflows {
-                    allWorkflows{
-                      name
-                      category
-                      path
-                    }
-                  }
-                }
-                ''',
-        'key': 'allWorkflows'
-    },
     'checkSwitchXmcDb': {
         'json': '''
                 {
@@ -212,21 +198,6 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 ''',
         'key': 'firmware'
     },
-    'getWorkflowIds': {
-        'json': '''
-                {
-                  workflows {
-                    allWorkflows {
-                      name
-                      category
-                      path
-                      id
-                    }
-                  }
-                }
-                ''',
-        'key': 'allWorkflows'
-    },
     'getDevicesIpAndSerialData': {
         'json': '''
                 {
@@ -241,6 +212,29 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 }
                 ''',
         'key': 'devices' # [{"deviceData": {"ipAddress": <IP>, "serialNumber": <SN>},...]
+    },
+    'getDevicesGeneralData': {
+        'json': '''
+                {
+                  network {
+                    devices {
+                      deviceName
+                      nickName
+                      ip
+                      status
+                      policyDomain
+                      sitePath
+                      sysContact
+                      sysLocation
+                      deviceData {
+                        serialNumber
+                        family
+                      }
+                    }
+                  }
+                }
+                ''',
+        'key': 'devices' # [{"deviceName": <>, "nickName": <>, etc., "deviceData": {"serialNumber": <SN>},...]
     },
     'getDeviceSerialNumber': {
         'json': '''
@@ -332,6 +326,93 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 ''',
         'key': 'profileByName'
     },
+    'getDeviceFamily': {
+        'json': '''
+                {
+                  network {
+                    device(ip: "<IP>") {
+                      deviceData {
+                        family
+                      }
+                    }
+                  }
+                }
+                ''',
+        'key': 'family'
+    },
+    'getDeviceId': {
+        'json': '''
+                {
+                  network {
+                    device(ip: "<IP>") {
+                      deviceId
+                    }
+                  }
+                }
+                ''',
+        'key': 'deviceId'
+    },
+    'getAdminProfileData': {
+        'json': '''
+                {
+                  administration {
+                    profileByName(name: "<PROFILENAME>") {
+                      snmpType
+                      readCredential {
+                        credentialName
+                      }
+                      readSecLevel
+                      writeCredential {
+                        credentialName
+                      }
+                      writeSecLevel
+                      maxCredential {
+                        credentialName
+                      }
+                      maxSecLevel
+                    }
+                  }
+                }
+                ''',
+        'key': 'profileByName'
+    },
+
+
+
+
+
+
+
+# QUERIES (Workflows):
+    'getWorkflowIds': {
+        'json': '''
+                {
+                  workflows {
+                    allWorkflows {
+                      name
+                      category
+                      path
+                      id
+                    }
+                  }
+                }
+                ''',
+        'key': 'allWorkflows'
+    },
+    'getWorkflowList': {
+        'json': '''
+                {
+                  workflows {
+                    allWorkflows{
+                      name
+                      category
+                      path
+                    }
+                  }
+                }
+                ''',
+        'key': 'allWorkflows'
+    },
     'listRunningWorkflows': {
         'json': '''
                 {
@@ -343,6 +424,18 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 }
                 ''',
         'key': 'activeExecutions'
+    },
+    'getWorkflowExecutionStatus': {
+        'json': '''
+                {
+                  workflows {
+                    execution(executionId: <EXECUTIONID>) {
+                      status
+                    }
+                  }
+                }
+                ''',
+        'key': 'status' # FAILED (failed or non existent), SUCCESS (finished), RUNNING (still running)
     },
 
 
@@ -421,6 +514,20 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 ''',
         'key': 'allEngineGroups'
     },
+    'getNacEngineGroupsWithLoadBalancers': {
+        'json': '''
+                {
+                  accessControl {
+                    allEngineGroups {
+                      name
+                      loadBalancingEnabled
+                      loadBalancerIps
+                    }
+                  }
+                }
+                ''',
+        'key': 'allEngineGroups' # [{"name": <engine group>, "loadBalancerIps": [<list-of-IPs|empty list>], "loadBalancingEnabled": true|false},...]
+    },
     'getNacGroupEngineIPs': {
         'json': '''
                 {
@@ -442,6 +549,19 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 }
                 ''',
         'key': 'groupNamesByType'
+    },
+    'getNacLocationGroupsMembers': {
+        'json': '''
+                {
+                  accessControl {
+                    group(name: "<LOCATIONGROUP>") {
+                      values
+                    }
+                    
+                  }
+                }
+                ''',
+        'key': 'values'
     },
     'getNacEngineLoadBalancing': {
         'json': '''
@@ -480,6 +600,25 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 ''',
         'key': 'engineGroup'
     },
+    'getSwitchesForEngineGroup': {
+        'json': '''
+                {
+                  accessControl {
+                    switchesForEngineGroup(name: "<NACGROUP>") {
+                      ipAddress
+                      primaryGateway
+                      secondaryGateway
+                      tertiaryGateway
+                      quaternaryGateway
+                      attributesToSend
+                      authTypeStr
+                    }
+                  }
+                }
+                ''',
+        'key': 'switchesForEngineGroup' # [{"ipAddress": <switch ip>, "primaryGateway": <>, "secondaryGateway": <>, "tertiaryGateway": <>, "quaternaryGateway": <>},...]
+    },
+
 
 
 # QUERIES (Policy):
@@ -544,6 +683,50 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 ''',
         'key': 'devices'
     },
+    'getPolicyVlanIslandData': {
+        'json': '''
+                {
+                  policy {
+                    pviIslands(input: {
+                      domainName: "<POLICYDOMAIN>"
+                    }) {
+                      data {
+                        name
+                        devices {
+                          name
+                        }
+                      }
+                      message
+                      status
+                      result {
+                        msg
+                      }
+                    }
+                  }
+                }
+                ''',
+        'key': 'data' # [{"name": <islandName>, "devices": [{"name": <switch IP>>}, ...]}, ...]
+    },
+    'checkPolicyEnforceComplete': {
+        'json': '''
+                {
+                  policy {
+                    enforceVerifyDomainResult(input: {
+                      uniqueId: "<UNIQUEID>"
+                    }) {
+                      message
+                      status
+                      result {
+                        devicesRemaining
+                        toString
+                      }
+                    }
+                  }
+                }
+                ''',
+        'key': 'devicesRemaining' # 0 = complete; > 0 still running
+    },
+
 
 
 # MUTATIONS (General):
@@ -650,25 +833,6 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                   }
                 }
                 ''',
-    },
-    'executeWorkflow': {
-        'json': '''
-                mutation {
-                  workflows {
-                    startWorkflow(input: {
-                      id: <ID>,
-                      variables: <JSONINPUTS>
-                    })
-                    {
-                      message
-                      status
-                      executionId
-                      errorCode
-                    }
-                  }
-                }
-                ''',
-        'key': 'executionId'
     },
     'setDeviceUserData': {
         'json': '''
@@ -874,6 +1038,74 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 }
                 ''',
     },
+    'createTelnetCliProfile': {
+        'json': '''
+                mutation {
+                  administration {
+                    createCliProfiles(input: {
+                      profiles: [
+                        {
+                          description: "<PROFILENAME>"
+                          userName: "<USERNAME>"
+                          protocolType: TELNET
+                          loginPassword: "<PASSWORD>"
+                        }
+                      ]
+                    }) {
+                      message
+                      status
+                    }
+                  }
+                }
+                ''',
+    },
+    'createDeviceProfile': {
+        'json': '''
+                mutation {
+                  administration {
+                    createDeviceProfiles(input: {
+                      profiles: [
+                        {
+                          profileName: "<PROFILENAME>"
+                          snmpVersion:<SNMPVERSION>
+                          readProfileName:"<SNMPPROFILE>"
+                          writeProfileName:"<SNMPPROFILE>"
+                          writeSecurity:<SECURITY>
+                          maxSecurity:<SECURITY>
+                          cliProfileName:"<CLIPROFILE>"
+                        }
+                      ]
+                    } )
+                     {
+                      message
+                      status
+                    }
+                  }
+                }
+                ''',
+    },
+
+
+# MUTATIONS (Workflows):
+    'executeWorkflow': {
+        'json': '''
+                mutation {
+                  workflows {
+                    startWorkflow(input: {
+                      id: <ID>,
+                      variables: <JSONINPUTS>
+                    })
+                    {
+                      message
+                      status
+                      executionId
+                      errorCode
+                    }
+                  }
+                }
+                ''',
+        'key': 'executionId'
+    },
 
 
 # MUTATIONS (Access Control):
@@ -904,6 +1136,8 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                       switchType: L2_OUT_OF_BAND,
                       primaryGateway: "<ENGINE1>",
                       secondaryGateway: "<ENGINE2>",
+                      tertiaryGateway: "<ENGINE3>",
+                      quaternaryGateway: "<ENGINE4>",
                       authType: NONE,
                       attrsToSend: "<RADIUSTEMPLATE>",
                       radiusAccountingEnabled: true,
@@ -1180,15 +1414,18 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                   policy{
                     enforceDomain(input:{
                       name:"<POLICYDOMAIN>"
+                      deviceIds: [<DEVICEIDLIST>]
                     }) {
                       message
                       status
                       result{
+                        uniqueId
                         msg
                       }
                     }
                   }
                 }
                 ''',
+        'key': 'uniqueId'
     },
 }

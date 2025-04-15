@@ -659,8 +659,8 @@ def systemIdReplMask(sysId, mask, value): # v1 - Replaces system-id masked bits 
 def macReplMask(mac, mask, value): # v1 - Replaces MAC address masked bits with value provided
     return numberToMacAddr(idReplMask(mac, mask, value))
 
-def parseCliCommands(chainStr): # v3 - Parses the CLI commands string and filters out empty lines and comment lines
-    cmdList = map(str.rstrip, str(chainStr).splitlines())
+def parseCliCommands(chainStr): # v4 - Parses the CLI commands string and filters out empty lines and comment lines
+    cmdList = map(str.rstrip, str(chainStr.encode('ascii', 'ignore')).splitlines()) # Force to ASCII without warnings, in case user pasted text with unicode
     cmdList = filter(None, cmdList) # Filter out empty lines, if any
     if "RegexEmbeddedIfElse" in globals(): # Valid pragma lines include velocity statements 
         pragmaRegex = re.compile('^#(error|sleep|if|elseif|else|end|eval|last)') # "#block" missing as we don't use it where we use this function 
@@ -669,45 +669,94 @@ def parseCliCommands(chainStr): # v3 - Parses the CLI commands string and filter
     cmdList = [x for x in cmdList if x[0] != "#" or pragmaRegex.match(x)] # Strip commented lines out, except accepted pragma lines
     return "\n".join(cmdList)
 
+import json
+def parsePatterns(chainStr): # v1 - Parses the input grep patternsm and filters out empty lines and comment lines
+    patList = map(str.rstrip, str(chainStr.encode('ascii', 'ignore')).splitlines()) # Force to ASCII without warnings, in case user pasted text with unicode
+    patList = filter(None, patList) # Filter out empty lines, if any
+    patList = [x for x in patList if x[0] != "#"] # Strip commented lines out
+    patDictList = []
+    for pat in patList:
+        patMatch = re.match(r'^(?:(VOSS|EXOS|ISW1|ISW2|ERS) *& *)?(.+?)(:[=!]) *(.+)$', pat)
+        patDictList.append({
+            "family"     : patMatch.group(1),
+            "description": patMatch.group(2).strip(),
+            "match"      : patMatch.group(3),
+            "pattern"    : patMatch.group(4),
+    })
+    debug("\nConfig patterns data =\n{}\n".format(json.dumps(patDictList, sort_keys=True, indent=4)))
+    return patDictList
+
 def parseCyphers(chainStr): # v2 - Parses the SSH Cyphers input and filters out empty lines and comment lines
     cypherList = map(str.strip, str(chainStr).splitlines())
     cypherList = filter(None, cypherList) # Filter out empty lines, if any
     cypherList = [x.split()[0] for x in cypherList if x[0] != "#"] # Strip commented lines out and keep only 1st word of each line
     return cypherList
 
-def takePolicyDomainLock(policyDomain, waitTime=10, retries=6): # v1 - Take lock on opened policy domain
+def parseRadiusAttribute(templates, family): # v1 - Returns family template if templates in format VOSS|EXOS|ISW:<template-name>
+    for line in templates.splitlines():
+        templateMatch = re.match(r'^ *(VOSS|EXOS|ISW) *: *(.+?) *$', line)
+        if templateMatch and templateMatch.group(1) == family:
+            return templateMatch.group(2)
+    return None
+
+def takePolicyDomainLock(policyDomain, waitTime=10, retries=4, forceAfterRetries=2): # v2 - Take lock on opened policy domain
     # If we fail to get a lock initially, this could be due to a user holding a lock on the same policy domain
     # Or, it could be another instance of this same workflow running for another switch, doing the same thing
-    # We allow 1 waitTime only for the former (no retries), then we take the lock forcibly
-    # In the latter case, we retry as many times as retries, before failing, but never forcing
-
-    def myClonesRunning(): # Return true if more then 1 instance of myself running
-        runningWorkflowsList = nbiQuery(NBI_Query['listRunningWorkflows'], debugKey='runningWorkflowsList')
-        myselfCount = 0
-        for workflow in runningWorkflowsList:
-            if workflow['workflowName'] == scriptName():
-                myselfCount += 1
-        if myselfCount == 0:
-            exitError("Unexpected result while checking for clones of this workflow running\n{}".format(LastNbiError))
-        if myselfCount > 1:
-            return True
-        return False
-
+    # (but latter is no longer applicable if acquireLock() is used, so we don't cater for it anymore)
+    # We try and take the lock up to number of retries input, waiting waitTime between every retry
+    # Initially we try without forcing, but after forceAfterRetries we try by forcing
     forceFlag = False
     retriesCount = 0
     while not nbiMutation(NBI_Query['lockOpenedPolicyDomain'], FORCEFLAG=forceFlag): # Try take lock
         if LastNbiError == "Conflict":
+            retriesCount += 1
+            if retriesCount >= retries:
+                exitLockError("Failed to place lock on Policy Domain '{}' after {} retries\n{}".format(policyDomain, retries, LastNbiError))
             print "Unable to acquire lock on Policy Domain '{}'; re-trying in {} secs".format(policyDomain, waitTime)
             time.sleep(waitTime)
-            if not myClonesRunning():
-                print "No other clones of myself running, forcing lock on next try"
+            if retriesCount >= forceAfterRetries:
+                print "Forcing lock on next try"
                 forceFlag = True
-            retriesCount += 1
-            if retriesCount > retries:
-                exitError("Failed to place lock on Policy Domain '{}' after {} retries\n{}".format(policyDomain, retries, LastNbiError))
-        else:
-            exitError("Failed to place lock on Policy Domain '{}'\n{}".format(policyDomain, LastNbiError))
+        else: # Unexpected error
+            exitLockError("Failed to place lock on Policy Domain '{}'\n{}".format(policyDomain, LastNbiError))
     print "Placed lock on Policy Domain '{}'".format(policyDomain)
+
+def enforcePolicyDomain(policyDomain, deviceIds=None, waitTime=5, retries=2, checkTime=10): # v1 - Enforce Policy domain and wait for completion
+    # deviceIds, if provided, must be either a single device ID, or a comma separated string of device id numbers
+    # If deviceIds is provided the policy enforcement will be done only on those switches, not the whole domain
+    # An initial waitTime is done, then repeated in between retries up to the number of retries provided
+    # Once police enforce API call returns success, this only means that XIQ-SE has started the Policy Enforce
+    # But a policy enforce could take several minutes, particularly if done on whole domain (no deviceIds) and EXOS switches present in domain
+    # So the function then checks progress of the enforce, and only returns once it has completed (regardless of success or not)
+    # To check if the policy enforce is completed, an API call is made every checkTime seconds
+    if not deviceIds:
+        deviceIds = ''
+    pendingEnforce = True
+    retryCount = 0
+    while pendingEnforce and retryCount <= retries:
+        # Take a nap before enforcing the Policy domain, otherwise the enforce can fail if done too quickly after a save..
+        print "Waiting {} seconds before enforcing Policy Domain '{}'".format(waitTime, policyDomain)
+        time.sleep(waitTime)
+        retryCount += 1
+        # Enforce the Policy Domain
+        uniqueId = nbiMutation(NBI_Query['enforcePolicyDomain'], POLICYDOMAIN=policyDomain, DEVICEIDLIST=deviceIds) # Enforce the Policy Domain
+        if uniqueId:
+            print "Successfully enforced Policy Domain '{}'".format(policyDomain)
+            pendingEnforce = False
+        else:
+            print "Failed to enforce Policy Domain '{}'\n{}\n".format(policyDomain, LastNbiError)
+            if retryCount <= retries:
+                print "- retry {}".format(retryCount)
+    if pendingEnforce: # We failed to enforce after several retries...
+        exitLockError("Failed to enforce Policy Domain '{}' after {} retries\nError message: {}".format(policyDomain, retries, LastNbiError))
+
+    # Now wait until the policy enforce completes, before releasing the lock
+    devicesRemaining = 1 # Init to non-zero
+    while devicesRemaining > 0:
+        print "Waiting {} seconds before checking if Policy Domain enforce completed".format(checkTime)
+        time.sleep(checkTime)
+        devicesRemaining = nbiQuery(NBI_Query['checkPolicyEnforceComplete'], UNIQUEID=uniqueId)
+    print "Policy Domain '{}' enforce completed".format(policyDomain)
 
 def sortNacIpList(ipList): # v1 - Given a list of IPs, returns same list with 1st IP the one set as "Primary" under UserData
     sortedIpList = []

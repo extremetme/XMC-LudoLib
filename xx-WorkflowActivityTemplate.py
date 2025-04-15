@@ -1,6 +1,11 @@
 # BEGIN *** WorkflowActivityTemplate_xx ***
-print "Workflow version {} on XIQ-SE/XMC version {}".format(emc_vars["wrkfl_VERSION"], emc_vars["serverVersion"])
-print "Activity: WorkflowActivityTemplate_xx"
+__version__ = '1.00'
+try:
+    workflowVersion = emc_vars["wrkfl_VERSION"]
+except:
+    workflowVersion = None
+print "Workflow version {} on XIQ-SE/XMC version {}".format(workflowVersion, emc_vars["serverVersion"])
+print "Activity: WorkflowActivityTemplate_xx version {}".format(__version__)
 # Written by Ludovico Stevens, Solution Engineering Extreme Networks
 # Library of functions used in this script can be found here:
 # https://github.com/extremetme/XMC-LudoLib
@@ -82,27 +87,40 @@ except:
 # Main:
 #
 def main():
-    if emc_vars["inst_device_success"].lower() != 'true': # For multi-device workflows, on all activities but the first
-        exitError("Failing this activity for device {} as previous activity failed for same device".format(emc_vars['deviceIP']))
+#    if emc_vars["inst_device_success"].lower() != 'true': # For multi-device workflows, on all activities but the first
+#        exitError("Failing this activity for device {} as previous activity failed for same device".format(emc_vars['deviceIP']))
 
     setFamily(CLI_Dict) # Sets global Family variable
 
     # Get inputs
-    ipAddress            = emc_vars['deviceIP']
-    siteVarDict          = readSiteCustomVariables(ipAddress)
-    variable             = siteVarLookup(emc_vars['input_variable'], siteVarDict)
-    flag                 = True if emc_vars['const_cliCmdsFailOnError'].lower() == 'true' else False
+    ipAddress                = emc_vars['deviceIP']
+    siteVarDict              = readSiteCustomVariables(ipAddress)
+    variable                 = siteVarLookup(emc_vars['input_variable'], siteVarDict)
+    try:
+        cliRetries           = emc_vars['const_CLI_RETRIES']
+    except:
+        cliRetries           = 6
+    try:
+        cliRetryDelay        = emc_vars['const_CLI_RETRY_DELAY']
+    except:
+        cliRetryDelay        = 10
+    try:
+        flag                 = True if emc_vars['const_cliCmdsFailOnError'].lower() == 'true' else False
+    except:
+        flag                 = True
 
 
     # Display all input data
     print
     print "Input Data:"
     print " - Selected Switch IP = {}".format(ipAddress)
+    print " - CLI retries = {}".format(cliRetries)
+    print " - CLI retry delay = {}".format(cliRetryDelay)
     print
 
 
     # Disable more paging
-    sendCLI_showCommand(CLI_Dict[Family]['disable_more_paging'])
+    sendCLI_showCommand(CLI_Dict[Family]['disable_more_paging'], retries=cliRetries, retryDelay=cliRetryDelay)
 
     # Enter privExec
     if 'enable_context' in CLI_Dict[Family]:
@@ -126,7 +144,8 @@ def main():
     workflow_DeviceMessage("Configured RADIUS and EAPoL on device(s) <>")
 
     # Exit code will be success if we get here
-    emc_results.put("inst_device_success",  "true") # For multi-device workflows
+#    emc_results.put("inst_device_success",  "true") # For multi-device workflows
+    emc_results.setStatus(emc_results.Status.SUCCESS)
     print "Exit code SUCCESS"
 
 main()

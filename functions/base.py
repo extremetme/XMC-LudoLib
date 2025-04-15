@@ -1,13 +1,18 @@
 #
 # Base functions
-# base.py v8
+# base.py v10
 #
 import re                           # Used by scriptName
 import time                         # Used by debug & exitError
 ExitErrorSleep = 10
+DebugLogger = None
 
-def debug(debugOutput): # v2 - Use function to include debugging in script; set above Debug variable to True or False to turn on or off debugging
-    if Debug:
+def debug(debugOutput): # v3 - Use function to include debugging in script; set above Debug variable to True or False to turn on or off debugging
+    if not Debug:
+        return
+    if DebugLogger:
+        DebugLogger.debug(debugOutput)
+    else:
         print "[{}] {}".format(time.ctime(), debugOutput)
 
 def exitError(errorOutput, sleep=ExitErrorSleep): # v3 - Exit script with error message and setting status appropriately

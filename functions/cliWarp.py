@@ -1,6 +1,6 @@
 #
 # CLI warp buffer functions (requires cli.py v26)
-# cliWarp.py v9
+# cliWarp.py v11
 #
 import os                           # Used by warpBuffer_execute
 WarpBuffer = []
@@ -12,7 +12,7 @@ def warpBuffer_add(chainStr): # v1 - Preload WarpBuffer with config or configCha
         cmdAdd = re.sub(r'\n.+$', '', cmd) # Strip added CR+y or similar (these are not required when sourcing from file on VOSS and do not work on ERS anyway)
         WarpBuffer.append(cmdAdd)
 
-def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, waitForPrompt=True, historyAppend=True): # v8 - Appends to existing WarpBuffer and then executes it
+def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, waitForPrompt=True, historyAppend=True): # v10 - Appends to existing WarpBuffer and then executes it
     # Same as sendCLI_configChain() but all commands are placed in a script file on the switch and then sourced there
     # Apart from being fast, this approach can be used to make config changes which would otherwise result in the switch becomming unreachable
     # Use of this function assumes that the connected device (VSP) is already in privExec + config mode
@@ -51,7 +51,9 @@ def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, wai
     if tftpCheck[Family] == True:
         tftpEnabled = True
     else:
-        tftpEnabled = sendCLI_showRegex(tftpCheck[Family])
+        tftpEnabled = sendCLI_showRegex(tftpCheck[Family], returnCliError=True)
+        if tftpEnabled == None: # Case of X435 which does not have configurable TFTP process, but TFTP is there
+            tftpEnabled = True
     if not tftpEnabled:
         if Sanity:
             print "SANITY> {}".format(tftpActivate[Family])
@@ -70,7 +72,7 @@ def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, wai
         return True
 
     # Write the commands to a file under XMC's TFTP root directory
-    tftpFileName = userName + '.' + scriptName().replace(' ', '_') + '.' + switchIP.replace('.', '_')
+    tftpFileName = (userName + '.' + scriptName()).replace(' ', '_') + '.' + switchIP.replace('.', '_')
     tftpFilePath = xmcTftpRoot + '/' + tftpFileName
     try:
         with open(tftpFilePath, 'w') as f:

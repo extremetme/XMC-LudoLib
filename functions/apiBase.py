@@ -1,10 +1,10 @@
 #
 # XMC GraphQl & RESTCONF & XIQ API required functions
-# apiBase.py v5
+# apiBase.py v6
 #
 from java.util import LinkedHashMap
 
-def recursionKeySearch(nestedDict, returnKey): # v1 - Used by both nbiQuery() and nbiMutation() and restconfCall()
+def recursionKeySearch(nestedDict, returnKey): # v2 - Used by both nbiQuery() and nbiMutation() and restconfCall()
     for key, value in nestedDict.iteritems():
         if key == returnKey:
             return True, value
@@ -13,9 +13,9 @@ def recursionKeySearch(nestedDict, returnKey): # v1 - Used by both nbiQuery() an
             foundKey, foundValue = recursionKeySearch(value, returnKey)
             if foundKey:
                 return True, foundValue
-        return [None, None] # If we find nothing
+    return [None, None] # If we find nothing
 
-def recursionStatusSearch(nestedDict): # v3 - Used by nbiMutation()
+def recursionStatusSearch(nestedDict): # v4 - Used by nbiMutation(), seeks the status key and returned message
     for key, value in nestedDict.iteritems():
         if key == 'status':
             if 'message' in nestedDict and nestedDict['message']:
@@ -29,7 +29,7 @@ def recursionStatusSearch(nestedDict): # v3 - Used by nbiMutation()
             foundKey, foundValue, foundMsg = recursionStatusSearch(value)
             if foundKey:
                 return True, foundValue, foundMsg
-        return [None, None, None] # If we find nothing
+    return [None, None, None] # If we find nothing
 
 def replaceKwargs(queryString, kwargs): # v2 - Used by both nbiQuery() and nbiMutation() and restconfCall()
     for key in kwargs:

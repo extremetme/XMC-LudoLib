@@ -528,6 +528,7 @@ CLI_Dict = {
         'get_platform_vlan_types'    : 'dict://show vlan basic||^(\d+) +.+? +(\S+) +\d+ ',
         'get_sdwan'                  : 'bool://show interfaces gigabitEthernet auto-sense||SD-WAN',
         'get_smlt_role'              : 'str://show virtual-ist||(Slave|Master)',
+        'get_running_config'         : 'show running-config',
         'get_software_version'       : 'str://show sys software | include Version ||^Version : Build ([\d\.]+)[ _]', # If version 9.1.1.0_B006, will return only 9.1.1.0
         'get_spbm_platform_bvlans'   : 'list://show vlan basic||^(\d+) +.+? +spbm-bvlan',
         'get_spbm_global_settings'   : 'list://show isis spbm||(?:(B-VID) +PRIMARY +(NICK) +LSDB +(IP)(?: +(IPV6))?(?: +(MULTICAST))?|^\d+ +(?:(\d+)-(\d+) +\d+ +)?(?:([\da-f]\.[\da-f]{2}\.[\da-f]{2}) +)?(?:disable|enable) +(disable|enable)(?: +(disable|enable))?(?: +(disable|enable))?|^\d+ +(?:primary|secondary) +([\da-f:]+)(?: +([\da-f\.]+))?)',
@@ -795,6 +796,7 @@ CLI_Dict = {
         'get_mgmt_ip_mask'           : 'int://show vlan | include {0}||{0} +\/(\d\d?) ', # IP address
         'get_mgmt_vlan_and_mask'     : 'tuple://show vlan | include {0}||(\d+) +{0} +\/(\d\d?) ', # IP address
         'get_mlt_data'               : 'list://show sharing||^ +(?:((?:\d+:)?\d+)(?: +(?:\d+:)?\d+)? +(LACP|Static) +\d+ +)?\w+(?: +\w+)? +((?:\d+:)?\d+)',
+        'get_running_config'         : 'show configuration',
         'get_software_version'       : 'str://show version ||^Image +: .+ version ([\d\.]+)[ -]', # If version 32.7.1.9-patch1-49, will return only 32.7.1.9
         'get_static_vlan_isids'      : 'dict-both://show fabric attach assignments||^(?:\d[\d:]*)? +(\d+) +\S+ +Static +(\d+) ',
         'get_vlan_isids'             : 'dict-both://show fabric attach assignments||^(?:\d[\d:]*)? +(\d+) +\S+ +\S+ +(\d+) ',
@@ -936,6 +938,7 @@ CLI_Dict = {
         'get_mac_address'            : 'show sys-info||^MAC Address: +(\S+)',
         'get_mlt_data'               : 'list://show mlt||^(\d+) +.+?[^#]([\d\/,-]+|NONE) +(?:Single|All) +\S+ +(Enabled|Disabled)(?: +(?:Trunk|Access))? +(NONE|\d+)',
         'get_password_security'      : 'str://show password security ||(enabled|disabled)',
+        'get_running_config'         : 'show running-config',
         'get_spanning_tree_mode'     : 'str://show spanning-tree mode ||^Current STP Operation Mode: (\w+)',
         'get_stacking_mode'          : 'str://show sys-info ||^Operation Mode: +(Switch|Stack)',
         'get_terminal_length'        : 'int://show terminal ||Terminal length: (\d+)',
@@ -1018,6 +1021,7 @@ CLI_Dict = {
         'config_context'             : 'config term',
         'get_mgmt_ip_vlan_and_mask'  : 'tuple://show ip interface brief ||^VLAN (\d+) +{}/(\d+) +DHCP', # IP address; returns mask bits
         'get_mgmt_ip_gateway'        : 'str://show ip route ||^0\.0\.0\.0\/0 via (\d+\.\d+\.\d+\.\d+)',
+        'get_running_config'         : 'show running-config',
         'set_mgmt_ip_gateway'        : 'ip route 0.0.0.0 0.0.0.0 {}', # Default Gateway IP
         'set_mgmt_ip'                : 'interface vlan {}; ip address {} {}; exit', # Mgmt VLAN, IP address, IP Mask
         'modify_admin_user'          : 'username admin privilege 15 password unencrypted {}', # Admin Password
@@ -1055,6 +1059,7 @@ CLI_Dict = {
 #        'disable_more_paging_cfg'    : 'configure; setenv pagefilter 0; exit',
         'get_mgmt_ip_vlan'           : 'str://show fa elements ||^\S+ +FA Server +(\d+)',
         'get_mgmt_ip_mask_and_gw'    : 'list-diagonal://show ip dhcp client {} ||^ +(?:IP Address +: {}\/(\d+\.\d+\.\d+\.\d+)|Default Gateway: (\d+\.\d+\.\d+\.\d+))', #Mgmt VLAN, IP Address; returns dotted mask
+        'get_running_config'         : 'show running-config',
         'set_mgmt_ip_gateway'        : 'default-gateway {}', # Default Gateway IP
         'set_mgmt_ip'                : 'interface vlan {}; ip address {} {}; exit', # Mgmt VLAN, IP address, IP Mask
         'modify_admin_user'          : 'account modify admin password {}', # Admin Password

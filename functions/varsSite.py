@@ -1,12 +1,16 @@
 #
 # Read Custom Site Variables (requires apiXmc.py and apiXmcDict.py calls: getDeviceSiteVariables + getSiteVariables)
-# varsSite.py v8
+# varsSite.py v9
 # 
 import re
 
-def readSiteCustomVariables(deviceIp): # v4 - Obtains a dict of custom site variables starting from Site of deviceIp
-    siteVariablesHash = nbiQuery(NBI_Query['getDeviceSiteVariables'], debugKey='siteVariablesHash', returnKeyError=True, IP=deviceIp)
-    debug("readSiteCustomVariables customVariables = {}".format(siteVariablesHash))
+def readSiteCustomVariables(deviceIp=None, sitePath=None): # v5 - Obtains a dict of custom site variables starting from sitePath provided or deviceIp
+    if sitePath:
+        siteVariablesHash = nbiQuery(NBI_Query['getSiteVariables'], debugKey='siteVariablesHash', returnKeyError=True, SITE=sitePath)
+        debug("readSiteCustomVariables customVariables from sitePath = {}".format(siteVariablesHash))
+    else:
+        siteVariablesHash = nbiQuery(NBI_Query['getDeviceSiteVariables'], debugKey='siteVariablesHash', returnKeyError=True, IP=deviceIp)
+        debug("readSiteCustomVariables customVariables from deviceIp = {}".format(siteVariablesHash))
     # Sample of what we should get back
     # "device": {
     #   "sitePath": "/World/PoC/Zero Touch Fabric/Access",
@@ -43,7 +47,10 @@ def readSiteCustomVariables(deviceIp): # v4 - Obtains a dict of custom site vari
             # Else we take the value
             return varHash["value"]
 
-        sitePath = siteVarDict['__PATH__'] = siteVariablesHash["sitePath"]
+        if sitePath:
+            siteVarDict['__PATH__'] = sitePath
+        else:
+            sitePath = siteVarDict['__PATH__'] = siteVariablesHash["sitePath"]
         # First pass, only read site non-global variables, as we prefer these
         debug("First pass, site local variables:")
         for varHash in siteVariablesHash["customVariables"]:

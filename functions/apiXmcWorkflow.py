@@ -1,6 +1,6 @@
 #
-# Workflow execution functions (requires apiXmc.py and apiXmcDict.py calls: getWorkflowIds + executeWorkflow)
-# apiXmcWorkflow.py v4
+# Workflow execution functions (requires apiXmc.py and apiXmcDict.py calls: getWorkflowIds + executeWorkflow + getWorkflowExecutionStatus)
+# apiXmcWorkflow.py v6
 #
 import re
 import json
@@ -34,7 +34,7 @@ def getWorkflowId(worflowPathName): # v1 - Returns the workflow id, or None if i
         return None
     return worflowId
 
-def workflowExecute(worflowPathNameOrId, **kwargs): # v3 - Execute named workflow with inputs key:values
+def workflowExecute(worflowPathNameOrId, **kwargs): # v5 - Execute named workflow with inputs key:values
                                                     # Syntax: workflowExecute("Provisioning/Onboard VSP", deviceIP="10.10.10.10")
     # Get the workflow id
     if str(worflowPathNameOrId).isdigit():
@@ -44,5 +44,18 @@ def workflowExecute(worflowPathNameOrId, **kwargs): # v3 - Execute named workflo
     debug("workflowExecute() workflowId = {}".format(worflowId))
 
     # Execute the workflow with inputs hash provided
-    executionId = nbiMutation(NBI_Query['executeWorkflow'], ID=str(worflowId), JSONINPUTS=re.sub(r'"(.*?)"(?=:)',r'\1',json.dumps(kwargs)))
+    executionId = nbiMutation(NBI_Query['executeWorkflow'], ID=str(worflowId), JSONINPUTS=re.sub(r'"(\w*?)"(?=:)',r'\1',json.dumps(kwargs, sort_keys=True, indent=4)))
     return executionId
+
+def workflowExecutionStatus(executionId): # v1 - Returns execution status of workflow with execution id provided
+    # Returns:
+    # - None  if workflow status is RUNNING
+    # - True  if workflow status is SUCCESS
+    # - False if workflow status is FAILED (this status also means non-existent executionId)
+    execStatus = nbiQuery(NBI_Query['getWorkflowExecutionStatus'], EXECUTIONID=executionId)
+    if execStatus == "RUNNING":
+        return None
+    elif execStatus == "SUCCESS" or execStatus == "COMPLETED":
+        return True
+    else: # execStatus == "FAILED"
+        return False
