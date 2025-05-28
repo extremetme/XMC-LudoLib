@@ -1,10 +1,10 @@
 #
 # Parsing of config template for #if/#elseif/#else/#end velocity type statements & #eval/#last
-# cliVelocityParsing.py v9
+# cliVelocityParsing.py v12
 #
 import re
 RegexEmbeddedIfElse  = re.compile('^[ \t]*#(if|elseif|else|end) *(?:\((.+?)\) *$|(\S+))?')
-RegexEmbeddedEval    = re.compile('#eval *\((.+)\)')
+RegexEmbeddedEval    = re.compile('#eval *\(([^#]+)\)')
 RegexEmbeddedEvalSet = re.compile('^[ \t]*#eval +([\w -]+?) *= *\((.+)\) *$')
 RegexEmbeddedEvalVar = re.compile('\$\[([\w -]+)\]')
 RegexEmbeddedLast    = re.compile('[ \t]*#last *$')
@@ -29,7 +29,7 @@ def preParseIfElseBlocks(config): # v5 - Pre-parses config for embedded ${}/$<>/
     debug("preParseIfElseBlocks finalConfig:\n{}\n".format(finalConfig))
     return finalConfig
 
-def parseIfElseBlocks(config): # v6 - Parses config for embedded #if/#elseif/#else/#end velocity type statements
+def parseIfElseBlocks(config): # v8 - Parses config for embedded #if/#elseif/#else/#end velocity type statements
 
     def replaceEvalString(match):
         try:
@@ -70,12 +70,14 @@ def parseIfElseBlocks(config): # v6 - Parses config for embedded #if/#elseif/#el
             invalidArg = regexMatch.group(3)
             if invalidArg:
                 exitError("Error parsing config file line number {}: invalid syntax for statement '#{}'".format(lineNumber, statement))
-            if evalString:
-                evalString = re.sub(RegexEmbeddedEvalVar, evalVarReplace, evalString) # Replaces embedded $[<eval-variable>] in evalString
-            try:
-                condition = bool(eval(evalString, {})) if evalString else False
-            except Exception as err:
-                exitError("Error parsing config file line number {}: cannot Python eval({}) conditional\nError: {}".format(lineNumber, evalString, err))
+            condition = False
+            if ifDict['includeLines']:
+                if evalString:
+                    evalString = re.sub(RegexEmbeddedEvalVar, evalVarReplace, evalString) # Replaces embedded $[<eval-variable>] in evalString
+                try:
+                    condition = bool(eval(evalString, {})) if evalString else False
+                except Exception as err:
+                    exitError("Error parsing config file line number {}: cannot Python eval({}) conditional\nError: {}".format(lineNumber, evalString, err))
             if statement == "if":
                 if ifDict['expectedStatements']: # Nested IF block
                     ifDictStack.append(ifDict.copy())

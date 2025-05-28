@@ -1,6 +1,6 @@
 #
 # Lock functions (based on Markus Nikulski's shareData() function)
-# lock.py v6
+# lock.py v7
 #
 import os
 import time
@@ -42,13 +42,13 @@ def returnContextDir(workflow, activity, script, execid, username, custom): # v1
         context = 'global'
     return LockRootDir + context
 
-def acquireLock(workflow=False, activity=False, script=False, execid=False, username=False, custom=None, lockTime=60, timeout=120): # v6 - Acquire lock on custom context
+def acquireLock(workflow=False, activity=False, script=False, execid=False, username=False, custom=None, lockTime=60, timeout=120): # v7 - Acquire lock on custom context
+    global LockContextDir
     if LockContextDir:
         exitLockError("acquireLock() called but a lock is already acquired")
     if timeout < lockTime: # Timeout is absolute; it does not re-arm itself when lock ownership changes and this task is still waiting
         exitError("acquireLock() timeout = {} must be larger than lockTime = {}".format(timeout, lockTime))
     print "\nLOCK requested at {}\n".format(time.ctime())
-    global LockContextDir
     contextDir = returnContextDir(workflow, activity, script, execid, username, custom)
     debug("acquireLock() contextDir = {}".format(contextDir))
     lockDir = contextDir + "/lock"
@@ -121,10 +121,10 @@ def acquireLock(workflow=False, activity=False, script=False, execid=False, user
         os.remove(queueFile)
     return True if lockObtained else False
 
-def yieldLock(): # v3 - Yield existing lock
+def yieldLock(): # v4 - Yield existing lock
+    global LockContextDir
     if not LockContextDir:
         exitError("yieldLock() cannot be called before acquireLock()")
-    global LockContextDir
     contextDir = LockContextDir
     debug("yieldLock() contextDir = {}".format(contextDir))
     lockDir = contextDir + "/lock"

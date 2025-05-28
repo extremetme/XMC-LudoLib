@@ -670,21 +670,35 @@ def parseCliCommands(chainStr): # v4 - Parses the CLI commands string and filter
     return "\n".join(cmdList)
 
 import json
-def parsePatterns(chainStr): # v1 - Parses the input grep patternsm and filters out empty lines and comment lines
+def parsePatterns(chainStr): # v4 - Parses the input grep patternsm and filters out empty lines and comment lines
     patList = map(str.rstrip, str(chainStr.encode('ascii', 'ignore')).splitlines()) # Force to ASCII without warnings, in case user pasted text with unicode
     patList = filter(None, patList) # Filter out empty lines, if any
-    patList = [x for x in patList if x[0] != "#"] # Strip commented lines out
+    patList = [x for x in patList if len(x) and x[0] != "#"] # Strip empty lines and commented lines out
     patDictList = []
     for pat in patList:
-        patMatch = re.match(r'^(?:(VOSS|EXOS|ISW1|ISW2|ERS) *& *)?(.+?)(:[=!]) *(.+)$', pat)
-        patDictList.append({
-            "family"     : patMatch.group(1),
-            "description": patMatch.group(2).strip(),
-            "match"      : patMatch.group(3),
-            "pattern"    : patMatch.group(4),
-    })
+        patMatch = re.match(r'^(?:(VOSS|EXOS|ISW1|ISW2|ERS) *& *)?(.+?)(:[=!]) *(.+?)(?:\((.+)\))?$', pat)
+        if patMatch:
+            patDictList.append({
+                "family"     : patMatch.group(1),
+                "description": patMatch.group(2).strip(),
+                "match"      : patMatch.group(3),
+                "pattern"    : patMatch.group(4).strip(),
+                "remediate"  : patMatch.group(5)
+            })
     debug("\nConfig patterns data =\n{}\n".format(json.dumps(patDictList, sort_keys=True, indent=4)))
     return patDictList
+
+def ifFileReadFile(inputStr): # v1 - If a file path, read and return that file, else return inputStr
+    lineList = map(str.rstrip, str(inputStr.encode('ascii', 'ignore')).splitlines()) # Force to ASCII without warnings, in case user pasted text with unicode
+    lineList = [x for x in lineList if len(x) and x[0] != "#"] # Strip empty lines and commented lines out
+    if len(lineList) == 1 and re.match(r'/.*', lineList[0]):
+        try:
+            with open(lineList[0], 'r') as file:
+                return file.read()
+        except:
+            exitError("Unable to open file {} for data".format(lineList[0]))
+    else:
+        return inputStr
 
 def parseCyphers(chainStr): # v2 - Parses the SSH Cyphers input and filters out empty lines and comment lines
     cypherList = map(str.strip, str(chainStr).splitlines())
@@ -792,3 +806,18 @@ def sortNacClientList(nacIpList, poolIpList): # v1 - Parses the nacIpList and ma
     else: # We don't care
         sortedIpList = nacIpList
     return sortedIpList
+
+import csv
+def writeCsvEmailAttachment(path, warnings, snNameIp): # v2 - Write warnings dict to CSV file
+    csvFilePath = path + "/warnings.csv"
+    with open(csvFilePath, 'w') as csv_file:
+        csv_writer = csv.DictWriter(csv_file, fieldnames=["S/N", "Sysname", "IP", "Warning", "Remediation"], extrasaction='ignore')
+        csv_writer.writeheader()
+        for sn in warnings:
+            for warning in warnings[sn]:
+            	warning, fixedFlag = re.subn(' - FIXED!$', '', warning)
+                if fixedFlag:
+                    csv_writer.writerow({"S/N": sn, "Sysname": snNameIp[sn]["name"], "IP": snNameIp[sn]["ip"], "Warning": warning, "Remediation": "Successful"})
+                else:
+                    csv_writer.writerow({"S/N": sn, "Sysname": snNameIp[sn]["name"], "IP": snNameIp[sn]["ip"], "Warning": warning, "Remediation": ""})
+    return csvFilePath

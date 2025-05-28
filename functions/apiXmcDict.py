@@ -376,6 +376,30 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 ''',
         'key': 'profileByName'
     },
+    'getSysLocation': {
+        'json': '''
+                {
+                  network {
+                    siteByLocation(location: "<SITE>"){
+                      sysLocation
+                    }
+                  }
+                }
+                ''',
+        'key': 'sysLocation'
+    },
+    'getSysContact': {
+        'json': '''
+                {
+                  network {
+                    siteByLocation(location: "<SITE>"){
+                      sysContact
+                    }
+                  }
+                }
+                ''',
+        'key': 'sysContact'
+    },
 
 
 

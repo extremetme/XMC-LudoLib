@@ -89,141 +89,99 @@ Family = 'Summit Series'
 
 
 inputStr = '''
-#
-#NTP usually comes from ZTP area, but ABRs are not configured by
-#ZTP so need to add IP’s, enable NTP and set timezone
-#
-'''.encode('ascii', 'ignore')
+/root/file.txt
 
-cliCommandsInput     = parseCliCommands(inputStr)
-print "cliCommandsInput = {}".format(cliCommandsInput)
+'''
+print ifFileReadFile(inputStr)
 sys.exit(0)
 
 
-## Testing ACT logic
-##configFile='act-template.txt'
-##configFile='test-template.txt'
+
+
+# Testing ACT logic
+#configFile='act-template.txt'
+#configFile='test-template.txt'
 #configFile='lui-template.txt'
-##serialNumber         = '2128Q-40044'
-#serialNumber         = 'JA072336G-00100'
-#csvFile='mgmtdata.csv'
-#lookup               = serialNumber
-##csvVarDict       = readCsvToDict(csvFile, lookup)
-#csvVarDict = {
-#    "JA072336G-00100": {
-#        "locId": "016", 
-#        "mgmtClip": "10.16.0.12", 
-#        "nodeId": "12", 
-#        "nodeType": "access", 
-#        "siteName": "/World/CMPb", 
-#        "sysName": "CMPb-525"
-#    }, 
-#    "__INDEX__": "Serial Number", 
-#    "__LOOKUP__": "JA072336G-00100", 
-#    "__PATH__": "/root/SG-Nodes/NewNodesData.csv"
-#}
-##csvVarDict = {
-##    "SB012106G-00026": {
-##        "locId": "016", 
-##        "mgmtClip": "10.16.0.2", 
-##        "nodeId": "02", 
-##        "nodeType": "disti", 
-##        "siteName": "/World/CMPb", 
-##        "sysName": "CMPb-522"
-##    }, 
-##    "__INDEX__": "Serial Number", 
-##    "__LOOKUP__": "SB012106G-00026", 
-##    "__PATH__": "/root/SG-Nodes/NewNodesData.csv"
-##}
-#
-#siteVarDict = {
-#    "__PATH__": "/World/CMPb", 
-#    "dataIsid": "", 
-#    "dataVlan": "", 
-#    "date": "01/07/2025 08:11:28 PM", 
-#    "deviceIP": "10.16.0.12", 
-#    "deviceName": "CMPb-525", 
-#    "deviceSysOid": "1.3.6.1.4.1.1916.2.464", 
-#    "deviceType": "5420F-16MW-32P-4XE-FabricEngine", 
-#    "dvrLeaf": "disable", 
-#    "faMgmtIsid": "10160005", 
-#    "faMgmtVlan": "5", 
-#    "family": "Universal Platform Fabric Engine", 
-#    "locationGroup": "", 
-#    "nacEnable": "enable", 
-#    "nodeDataFile": "/root/SG-Nodes/NewNodesData.csv", 
-#    "nodeTemplateFile": "/root/SG-Nodes/NewNodeTmpl.txt", 
-#    "prefixIsid": "1016", 
-#    "radiusTemplate": "Fabric Engine Edge", 
-#    "serverIP": "10.7.255.5", 
-#    "serverName": "xiqse.singapore.ctc.local", 
-#    "voiceIsid": "10160011", 
-#    "voiceVlan": "11", 
-#    "waitInterval": "", 
-#    "wapType1Isid": "10160008", 
-#    "wapType1Vlan": "8"
-#}
-##siteVarDict = {
-##    "__PATH__": "/World/CMPb", 
-##    "dataIsid": "", 
-##    "dataVlan": "", 
-##    "date": "01/07/2025 08:08:42 PM", 
-##    "deviceIP": "10.16.0.2", 
-##    "deviceName": "CMPb-522", 
-##    "deviceSysOid": "1.3.6.1.4.1.1916.2.441", 
-##    "deviceType": "5520-12MW-36W-FabricEngine", 
-##    "dvrLeaf": "disable", 
-##    "faMgmtIsid": "10160005", 
-##    "faMgmtVlan": "5", 
-##    "family": "Universal Platform Fabric Engine", 
-##    "locationGroup": "", 
-##    "nacEnable": "enable", 
-##    "nodeDataFile": "/root/SG-Nodes/NewNodesData.csv", 
-##    "nodeTemplateFile": "/root/SG-Nodes/NewNodeTmpl.txt", 
-##    "prefixIsid": "1016", 
-##    "radiusTemplate": "Fabric Engine Edge", 
-##    "serverIP": "10.7.255.5", 
-##    "serverName": "xiqse.singapore.ctc.local", 
-##    "voiceIsid": "10160011", 
-##    "voiceVlan": "11", 
-##    "waitInterval": "", 
-##    "wapType1Isid": "10160008", 
-##    "wapType1Vlan": "8"
-##}
-#
-#
-#
-#try:
-#    with open(configFile, 'r') as f:
-#        debug("-> reading file = {}".format(configFile))
-#        config = f.read() # We read it in as one big string
-#except Exception as e: # Expect IOError or ValueError
-#    print "{}: {}".format(type(e).__name__, str(e))
-#    exitError("Unable to read to config template file '{}'".format(configFile))
-#print
-#print "Config template loaded:"
-#print "======================="
-#print config
-## Pre-parse the template for lines with #if/#elseif/#else/#end velocity type statements, and pre-quote any variables used in there
-#config = preParseIfElseBlocks(config)
-## Parse the template for Global/Site variables : ${variable}
-#config = siteVarLookup(config, siteVarDict)
-## Parse the template for CSV variables : $<csvVariable>
-#config = csvVarLookup(config, csvVarDict, lookup)
-## Parse the template for Device UserData1-4 variables: $UD1-4
-##config = udVarLookup(config, udVarList)
-## Force config back to string (becomes unicode after above replacements)
-#config = str(config)
-## Parse for #if/#elseif/#else/#end velocity type statements
-#config, flag = parseIfElseBlocks(config)
-#print
-#print "Final config to push:"
-#print "====================="
-#print config
-#print
-#print "flag={}".format(flag)
-#print
-#sys.exit(0)
+configFile='AreaNodeTmpl.txt'
+#serialNumber         = '2128Q-40044'
+serialNumber         = 'SB012105G-00040'
+csvFile='mgmtdata.csv'
+lookup               = serialNumber
+#csvVarDict       = readCsvToDict(csvFile, lookup)
+csvVarDict = {
+    "SB012105G-00040": {
+        "locId": "015", 
+        "mgmtClip": "10.15.0.1", 
+        "nodeId": "01", 
+        "nodeType": "disti", 
+        "siteName": "/World/CMPa", 
+        "sysName": "CMPa-421"
+    }, 
+    "__INDEX__": "Serial Number", 
+    "__LOOKUP__": "SB012105G-00040", 
+    "__PATH__": "/root/SG-Nodes/NewNodesData.csv"
+}
+
+siteVarDict = {
+    "__PATH__": "/World/CMPa", 
+    "dataIsid": "", 
+    "dataVlan": "", 
+    "date": "04/17/2025 05:32:35 PM", 
+    "deviceIP": "10.15.0.1", 
+    "deviceName": "CMPa-421", 
+    "deviceSysOid": "1.3.6.1.4.1.1916.2.441", 
+    "deviceType": "5520-12MW-36W-FabricEngine", 
+    "dvrLeaf": "disable", 
+    "faMgmtIsid": "10150005", 
+    "faMgmtVlan": "5", 
+    "family": "Universal Platform Fabric Engine", 
+    "locationGroup": "", 
+    "nacEnable": "enable", 
+    "nodeDataFile": "/root/SG-Nodes/NewNodesData.csv", 
+    "nodeTemplateFile": "/root/SG-Nodes/AreaNodeTmpl.txt", 
+    "prefixIsid": "1017", 
+    "radiusTemplate": "Fabric Engine Edge", 
+    "serverIP": "10.7.255.5", 
+    "serverName": "xiqse.singapore.ctc.local", 
+    "voiceIsid": "0011", 
+    "voiceVlan": "11", 
+    "waitInterval": "", 
+    "wapType1Isid": "10150008", 
+    "wapType1Vlan": "8"
+}
+
+
+try:
+    with open(configFile, 'r') as f:
+        debug("-> reading file = {}".format(configFile))
+        config = f.read() # We read it in as one big string
+except Exception as e: # Expect IOError or ValueError
+    print "{}: {}".format(type(e).__name__, str(e))
+    exitError("Unable to read to config template file '{}'".format(configFile))
+print
+print "Config template loaded:"
+print "======================="
+print config
+# Pre-parse the template for lines with #if/#elseif/#else/#end velocity type statements, and pre-quote any variables used in there
+config = preParseIfElseBlocks(config)
+# Parse the template for Global/Site variables : ${variable}
+config = siteVarLookup(config, siteVarDict)
+# Parse the template for CSV variables : $<csvVariable>
+config = csvVarLookup(config, csvVarDict, lookup)
+# Parse the template for Device UserData1-4 variables: $UD1-4
+#config = udVarLookup(config, udVarList)
+# Force config back to string (becomes unicode after above replacements)
+config = str(config)
+# Parse for #if/#elseif/#else/#end velocity type statements
+config, flag = parseIfElseBlocks(config)
+print
+print "Final config to push:"
+print "====================="
+print config
+print
+print "flag={}".format(flag)
+print
+sys.exit(0)
 
 
 
