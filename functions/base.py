@@ -1,19 +1,25 @@
 #
 # Base functions
-# base.py v10
+# base.py v12
 #
 import re                           # Used by scriptName
 import time                         # Used by debug & exitError
 ExitErrorSleep = 10
 DebugLogger = None
 
-def debug(debugOutput): # v3 - Use function to include debugging in script; set above Debug variable to True or False to turn on or off debugging
+def printLog(message): # v1 - Print message to stdout but also into debug log file
+    if DebugLogger:
+        DebugLogger.info(message)
+    else:
+        print message
+
+def debug(debugOutput): # v4 - Use function to include debugging in script; set above Debug variable to True or False to turn on or off debugging
     if not Debug:
         return
     if DebugLogger:
         DebugLogger.debug(debugOutput)
     else:
-        print "[{}] {}".format(time.ctime(), debugOutput)
+        print u"[{}] {}".format(time.ctime(), debugOutput) # Might be unicode
 
 def exitError(errorOutput, sleep=ExitErrorSleep): # v3 - Exit script with error message and setting status appropriately
     if 'workflowMessage' in emc_vars: # Workflow
@@ -24,12 +30,12 @@ def exitError(errorOutput, sleep=ExitErrorSleep): # v3 - Exit script with error 
     emc_results.setStatus(emc_results.Status.ERROR)
     raise RuntimeError(errorOutput)
 
-def abortError(cmd, errorOutput): # v1 - A CLI command failed, before bombing out send any rollback commands which may have been set
-    print "Aborting script due to error on previous command"
+def abortError(cmd, errorOutput): # v2 - A CLI command failed, before bombing out send any rollback commands which may have been set
+    printLog("Aborting script due to error on previous command")
     try:
         rollbackStack()
     finally:
-        print "Aborting because this command failed: {}".format(cmd)
+        printLog("Aborting because this command failed: {}".format(cmd))
         exitError(errorOutput)
 
 def scriptName(): # v1 - Returns the assigned name of the Script or Workflow

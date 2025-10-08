@@ -213,6 +213,32 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 ''',
         'key': 'devices' # [{"deviceData": {"ipAddress": <IP>, "serialNumber": <SN>},...]
     },
+    'getDevicesSerialNumbers': {
+        'json': '''
+                {
+                  network {
+                    devices {
+                      deviceData {
+                        serialNumber
+                      }
+                    }
+                  }
+                }
+                ''',
+        'key': 'devices' # [{"deviceData": {"serialNumber": <SN>},...]
+    },
+    'getDiscoveredDevicesSerialNumbers': {
+        'json': '''
+                {
+                  network {
+                    discoveredDevices {
+                      serialNumber
+                    }
+                  }
+                }
+                ''',
+        'key': 'discoveredDevices' # [{"serialNumber": <SN>},...]
+    },
     'getDevicesGeneralData': {
         'json': '''
                 {
@@ -642,6 +668,22 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 ''',
         'key': 'switchesForEngineGroup' # [{"ipAddress": <switch ip>, "primaryGateway": <>, "secondaryGateway": <>, "tertiaryGateway": <>, "quaternaryGateway": <>},...]
     },
+    'getNacPolicyMappings': {
+        'json': '''
+                {
+                  accessControl{
+                    allPolicyMappingEntries {
+                      name
+                      locationName
+                      policyName
+                      vlanId
+                      vlanName
+                    }
+                  }
+                }
+                ''',
+        'key': 'allPolicyMappingEntries'
+    },
 
 
 
@@ -671,7 +713,8 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 {
                   policy {
                     pviIslands(input: {
-                      domainName: <POLICYDOMAIN>
+                      domainName: "<POLICYDOMAIN>"
+                      fromDatabase: <DB>              # true (from DB), false (from cache)
                     }) {
                       data {                          # null OR [{
                         defaultIsland                 #             "defaultIsland": true|false,
@@ -731,6 +774,129 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 ''',
         'key': 'data' # [{"name": <islandName>, "devices": [{"name": <switch IP>>}, ...]}, ...]
     },
+    'getPolicyVlanIslandData': {
+        'json': '''
+                {
+                  policy {
+                    pviIslands(input: {
+                      domainName: "<POLICYDOMAIN>"
+                      fromDatabase: true
+                    }) {
+                      data {
+                        defaultIsland
+                        name
+                        nsiList {
+                          name
+                          nsi
+                        }
+                        vlans {
+                          name
+                          vid
+                        }
+                      }
+                      message
+                      status
+                      result {
+                        msg
+                      }
+                    }
+                  }
+                }
+                ''',
+        'key': 'data'
+    },
+    'getPolicyRoleServices': {
+        'json': '''
+                {
+                  policy{
+                    roles (input: {
+                      domainName: "<POLICYDOMAIN>"
+                      fromDatabase:true
+                    }) {
+                      data {
+                        name
+                        services {
+                          name
+                        }
+                      }
+                      message
+                      status
+                      result{
+                        msg
+                      }
+                    }
+                  }
+                }
+                ''',
+        'key': 'data'
+    },
+    'getPolicyServiceRules': {
+        'json': '''
+                {
+                  policy{
+                    service(input: {
+                      domainName: "<POLICYDOMAIN>"
+                      name:"<SERVICENAME>"
+                      fromDatabase:true
+                    }) {
+                      data {
+                        rules {
+                          enabled
+                          typeStr
+                          name
+                          aclIndex
+                          vlan {
+                            name
+                            vid
+                          }
+                          trafDesc {
+                            extraData
+                            trafDescTypeStr
+                            trafDescValue
+                            trafDescValueStr
+                          }
+                          httpRedirectIndex
+                        }
+                      }
+                      message
+                      status
+                      result{
+                        msg
+                      }
+                    }
+                  }
+                }
+                ''',
+        'key': 'rules'
+    },
+    'getPolicyVlanIslandDevices': {
+        'json': '''
+                {
+                  policy {
+                    pviIsland(input: {
+                      domainName: "<POLICYDOMAIN>"
+                      name:"<TOPOLOGY>"
+                      fromDatabase: true
+                    }) {
+                      data {
+                        devices {
+                          device {
+                            ip
+                            deviceDisplayFamily
+                          }
+                        }
+                      }
+                      message
+                      status
+                      result {
+                        msg
+                      }
+                    }
+                  }
+                }
+                ''',
+        'key': 'devices' # ["ip": <IP>, "deviceDisplayFamily": <Family>]
+    },
     'checkPolicyEnforceComplete': {
         'json': '''
                 {
@@ -754,7 +920,8 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
 
 
 # MUTATIONS (General):
-    'customActionTask': ''' # This is not a mutation in itself; its json which gets replaced into addSiteCustomActionTaskList below as <TASKLIST>
+    # This is not a mutation in itself; its json which gets replaced into addSiteCustomActionTaskList below as <TASKLIST>
+    'customActionTask': '''
         {
           enabled: true
           vendor: "<VENDOR>"
@@ -1108,6 +1275,100 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 }
                 ''',
     },
+    'preRegisterDevice': {
+        'json': '''
+                mutation {
+                  network {
+                    preRegisterDevices(input: {
+                      devices: [{
+                        serialNumber: "<SN>"
+                        siteLocation: "<SITE>"
+                        useDiscoveredIP: false
+                        name: "<NAME>"
+                        ipAddress:"<IP>/<CIDRMASK>"
+                        gateway: "<GATEWAY>"
+                      }]
+                    }) {
+                      status
+                      message
+                    }
+                  }
+                }
+                ''',
+    },
+    'configurePreRegisteredDevice': {
+        'json': '''
+                mutation {
+                  network {
+                    configureDiscoveredDevice(input: {
+                      deviceConfig: {
+                        serialNumber: "<SN>"
+                        generalConfig: {
+                          defaultSitePath: "<SITE>"
+                          sysName: "<NAME>"
+                          sysLocation: "<LOCATION>"
+                          sysContact: "<CONTACT>"
+                          topologyRole: <TOPOLOGY>
+                        }
+                        deviceAnnotationConfig: {
+                          nickName: "<NAME>"
+                          assetTag: "<ASSETTAG>"
+                        }
+                        ztpPlusConfig: {
+                          useDiscoveredMode: DISABLED
+                          mgmtInterface: MANAGEMENT_ISID
+                          subnetAddress: "<IP>/<CIDRMASK>"
+                          gatewayAddress: "<GATEWAY>"
+                          domainName: "<DOMAINNAME>"
+                          dnsServer: "<DNSSERVER1>"
+                          dnsServer2: "<DNSSERVER2>"
+                          dnsServer3: "<DNSSERVER3>"
+                          ntpServer: "<NTPSERVER1>"
+                          ntpServer2: "<NTPSERVER2>"
+                          firmwareUpgradeType: <FWUPDATE>
+                          firmwareUpgradePersonaChange: <NOSFECONVERT>
+                        }
+                      }
+                    }) {
+                      status
+                      message
+                    }
+                  }
+                }
+                ''',
+    },
+    # This is not a mutation in itself; its json which gets replaced into updateEndpointLocations below as <ENDPOINTLIST>
+    'endpointData': '''
+        {
+          ipmask: "<IPCIDRNET>" 
+          alias: "<ALIAS>"
+          description:"<DESCRIPTION>"
+        }
+    ''',
+    'updateEndpointLocations': {
+        'json': '''
+                mutation {
+                  network {
+                    modifySite(input: {
+                      siteLocation:"<SITE>"
+                      siteConfig: {
+                        endpointLocationsConfig: {
+                          endpointLocationConfig: {
+                            mutationType: REPLACE
+                            endpointLocations: [
+                              <ENDPOINTLIST>
+                            ]
+                          }
+                        }
+                      }
+                    }) {
+                      status
+                      message
+                    }
+                  }
+                }
+                ''',
+    },
 
 
 # MUTATIONS (Workflows):
@@ -1238,6 +1499,20 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 }
                 ''',
     },
+    'accessControlEnforceAllEngines': {
+        'json': '''
+                mutation {
+                  accessControl {
+                    enforceAccessControlEngines(input: {
+                      ignoreWarnings: true
+                    }) {
+                      message
+                      status
+                    }
+                  }
+                }
+                ''',
+    },
     'accessControlCreateLocationGroup': {
         'json': '''
                 mutation {
@@ -1277,6 +1552,23 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                     removeEntryFromGroup(input: {
                       group: "<LOCATIONGROUP>"
                       value: "<IP>"
+                    }) {
+                      message
+                      status
+                    }
+                  }
+                }
+                ''',
+    },
+    'updatePolicyMappingEntry': {
+        'json': '''
+                mutation {
+                  accessControl{
+                    updatePolicyMappingEntry(input:{
+                      name:"<MAPPINGNAME>"
+                      locationName:"*"
+                      vlanId:<VID>
+                      vlanName:"<VLANNAME>"
                     }) {
                       message
                       status

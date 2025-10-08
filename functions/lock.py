@@ -1,6 +1,6 @@
 #
 # Lock functions (based on Markus Nikulski's shareData() function)
-# lock.py v7
+# lock.py v9
 #
 import os
 import time
@@ -22,33 +22,33 @@ def exitLockError(errorOutput, sleep=ExitErrorSleep): # v1 - Same as exitError()
         yieldLock()
     exitError(errorOutput, sleep)
 
-def returnContextDir(workflow, activity, script, execid, username, custom): # v1 - returns the context directory to use
+def returnContextDir(workflow, activity, script, execid, username, custom): # v2 - returns the context directory to use
     context = ''
     if username:
         context += '.' + emc_vars["userName"].replace('.', '_').replace('@', '_')
     if workflow: # Will only work with workflows
-        context += '.' + emc_vars['workflowPath'].replace('/','_')
+        context += '.' + emc_vars['workflowPath'][1:].replace('/','_')
     if execid: # Will only work with workflows
         context += '.' + emc_vars['workflowExecutionId']
     if script: # Will only work with scripts
-        context += '.' + emc_vars['javax.script.filename']
+        context += '.' + emc_vars['javax.script.filename'][1:].replace('/','_')
     if activity: # Will only work with scripts
         context += '.' + emc_vars['activityName'].replace("\n", '')
     if custom: # Custom name
         context += '.' + custom
     if context:
-        context = context.replace(' ','_')
+        context = context.replace(' ','-')
     else:
         context = 'global'
     return LockRootDir + context
 
-def acquireLock(workflow=False, activity=False, script=False, execid=False, username=False, custom=None, lockTime=60, timeout=120): # v7 - Acquire lock on custom context
+def acquireLock(workflow=False, activity=False, script=False, execid=False, username=False, custom=None, lockTime=60, timeout=120): # v8 - Acquire lock on custom context
     global LockContextDir
     if LockContextDir:
         exitLockError("acquireLock() called but a lock is already acquired")
     if timeout < lockTime: # Timeout is absolute; it does not re-arm itself when lock ownership changes and this task is still waiting
         exitError("acquireLock() timeout = {} must be larger than lockTime = {}".format(timeout, lockTime))
-    print "\nLOCK requested at {}\n".format(time.ctime())
+    printLog("\nLOCK requested at {}\n".format(time.ctime()))
     contextDir = returnContextDir(workflow, activity, script, execid, username, custom)
     debug("acquireLock() contextDir = {}".format(contextDir))
     lockDir = contextDir + "/lock"
@@ -73,7 +73,7 @@ def acquireLock(workflow=False, activity=False, script=False, execid=False, user
             with open(lockTimeFile, 'w') as f: # Stake a claim to the duration of our lock reservation
                 f.write(str(lockTime))
             debug("acquireLock() lock obtained & reserved for {} secs".format(lockTime))
-            print "\nLOCK acquired at {}\n".format(time.ctime())
+            printLog("\nLOCK acquired at {}\n".format(time.ctime()))
             LockContextDir = contextDir
             lockObtained = True
         except: # lock is already taken...
@@ -109,7 +109,7 @@ def acquireLock(workflow=False, activity=False, script=False, execid=False, user
             else: # Lock time has not yet expired reservation; honour it and keep trying until success or timeout
                 if startTime and time.time() - startTime + PauseSleep > timeout:
                     debug("acquireLock() timed out, aborting")
-                    print "\nLOCK timed-out at {}\n".format(time.ctime())
+                    printLog("\nLOCK timed-out at {}\n".format(time.ctime()))
                     timedOut = True
                 else:
                     if sleepMsg:
@@ -121,7 +121,7 @@ def acquireLock(workflow=False, activity=False, script=False, execid=False, user
         os.remove(queueFile)
     return True if lockObtained else False
 
-def yieldLock(): # v4 - Yield existing lock
+def yieldLock(): # v5 - Yield existing lock
     global LockContextDir
     if not LockContextDir:
         exitError("yieldLock() cannot be called before acquireLock()")
@@ -135,10 +135,10 @@ def yieldLock(): # v4 - Yield existing lock
     try:
         os.rmdir(lockDir)
         debug("yieldLock() deleted lockDir {}".format(lockDir))
-        print "\nLOCK released at {}\n".format(time.ctime())
+        printLog("\nLOCK released at {}\n".format(time.ctime()))
     except:
         debug("yieldLock() could not delete lockDir {}".format(lockDir))
-        print "\nTried & failed to release LOCK... at {}\n".format(time.ctime())
+        printLog("\nTried & failed to release LOCK... at {}\n".format(time.ctime()))
     try:
         os.remove(lockTimeFile)
         debug("yieldLock() deleted lockTimeFile {}".format(lockTimeFile))
@@ -147,7 +147,7 @@ def yieldLock(): # v4 - Yield existing lock
 
     LockContextDir = None
 
-def lockQueue(): # v3 - Check if there is a queue for the lock
+def lockQueue(): # v4 - Check if there is a queue for the lock
     if not LockContextDir:
         exitError("lockQueue() cannot be called without holding the lock")
     contextDir = LockContextDir
@@ -157,10 +157,10 @@ def lockQueue(): # v3 - Check if there is a queue for the lock
 
     # Returns length of queue waiting to acquire samew lock; 0 = no queue
     lockQueueLength = len(glob.glob(queueFileGlob))
-    print "\nLOCK queue length = {} at {}\n".format(lockQueueLength, time.ctime())
+    printLog("\nLOCK queue length = {} at {}\n".format(lockQueueLength, time.ctime()))
     return lockQueueLength
 
-def shareData(context, newData=None, purge=False): # v1 - Allows to read, store or flush data into provided context file in lock directory
+def shareData(context, newData=None, purge=False): # v3 - Allows to read, store or flush data into provided context file in lock directory
     # Examples:
     # data = shareData(context)                                   # Shared data is returned
     # None = shareData(context, purge=True)                       # Shared data is flushed, returs None
@@ -168,7 +168,8 @@ def shareData(context, newData=None, purge=False): # v1 - Allows to read, store 
     # sameData = shareData(context, newData=sameData, purge=True) # Existing data is flushed, new data is written and returned
 
     if not LockContextDir:
-        exitError("shareData() cannot be called without holding the lock")
+        if not acquireLock(workflow=True, execid=True, lockTime=5, timeout=10):
+            exitError("shareData() failed to acquire lock, cannot proceed")
     contextDir = LockContextDir
     shareFile = contextDir + "/{}.json".format(context)
     debug("shareData() shareFile = {}".format(shareFile))
@@ -182,7 +183,7 @@ def shareData(context, newData=None, purge=False): # v1 - Allows to read, store 
             try:
                 with open(shareFile, 'r') as f:
                     shareData = json.load(f)
-                print "\nLOCK shareData read for context {}\n".format(context)
+                printLog("\nLOCK shareData read for context {}\n".format(context))
             except:
                 exitLockError("Unable to read lock shareData() file {}; JSON expected".format(shareFile))
 
@@ -205,11 +206,11 @@ def shareData(context, newData=None, purge=False): # v1 - Allows to read, store 
                 json.dump(shareData, f)
         except:
             exitLockError("Unable to write lock shareData() file {}".format(shareFile))
-        print "\nLOCK shareData written for context {}\n".format(context)
+        printLog("\nLOCK shareData written for context {}\n".format(context))
 
     return shareData
 
-def readDataNoLock(context, workflow=False, activity=False, script=False, execid=False, username=False, custom=None): # v1 - Allows to read data without a lock
+def readDataNoLock(context, workflow=False, activity=False, script=False, execid=False, username=False, custom=None): # v2 - Allows to read data without a lock
     # Holding a lock when reading data is only necessary to avoid reading while someone else is writing the data
     # But if there is no chance of a write happening, then no need for tasks to grab a lock to read
     contextDir = returnContextDir(workflow, activity, script, execid, username, custom)
@@ -222,7 +223,7 @@ def readDataNoLock(context, workflow=False, activity=False, script=False, execid
         try:
             with open(shareFile, 'r') as f:
                 shareData = json.load(f)
-            print "\nNo LOCK shareData read for context {}\n".format(context)
+            printLog("\nNo LOCK shareData read for context {}\n".format(context))
         except:
             exitLockError("Unable to read lock shareData() file {}; JSON expected".format(shareFile))
     return shareData

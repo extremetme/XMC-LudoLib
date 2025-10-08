@@ -1,6 +1,6 @@
 #
 # XMC GraphQl NBI functions - (requires apiBase.py)
-# apiXmc.py v15
+# apiXmc.py v16
 #
 LastNbiError = None
 NbiUrl = None
@@ -39,15 +39,15 @@ def nbiQuery(jsonQueryDict, debugKey=None, returnKeyError=False, **kwargs): # v8
         else: debug("nbiQuery response = {}".format(response))
     return response
 
-def nbiMutation(jsonQueryDict, returnKeyError=False, debugKey=None, **kwargs): # v8 - Makes a GraphQl mutation query of XMC NBI; returns true on success
+def nbiMutation(jsonQueryDict, returnKeyError=False, debugKey=None, **kwargs): # v9 - Makes a GraphQl mutation query of XMC NBI; returns true on success
     global LastNbiError
     jsonQuery = replaceKwargs(jsonQueryDict['json'], kwargs) # Might be unicode
     returnKey = jsonQueryDict['key'] if 'key' in jsonQueryDict else None
     if Sanity:
-        print u"SANITY - NBI Mutation:\n{}\n".format(jsonQuery)
+        printLog(u"SANITY - NBI Mutation:\n{}\n".format(jsonQuery))
         LastNbiError = None
         return True
-    print u"NBI Mutation Query:\n{}\n".format(jsonQuery)
+    printLog(u"NBI Mutation Query:\n{}\n".format(jsonQuery))
     response = nbiSessionPost(jsonQuery, returnKeyError) if NbiUrl else emc_nbi.query(jsonQuery)
     debug("nbiQuery response = {}".format(response))
     if 'errors' in response: # Query response contains errors

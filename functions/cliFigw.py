@@ -1,9 +1,9 @@
 #
 # FIGW CLI functions (requires VOSS 8.4.2 or later)(requires cli.py)
-# cliFigw.py v6
+# cliFigw.py v7
 #
 
-def figwCLI_showCommand(cmd, returnCliError=False, msgOnError=None): # v2 - Send a FIGW CLI show command; return output
+def figwCLI_showCommand(cmd, returnCliError=False, msgOnError=None): # v3 - Send a FIGW CLI show command; return output
     # Only supported for family = 'VSP Series' and either a VSP7400 or VSP4900 with FIGW VM installed
     # VSP must be in config mode and cmd must not have any quotes or carriage returns
     global LastError
@@ -15,7 +15,7 @@ def figwCLI_showCommand(cmd, returnCliError=False, msgOnError=None): # v2 - Send
             if returnCliError: # If we asked to return upon CLI error, then the error message will be held in LastError
                 LastError = outputStr
                 if msgOnError:
-                    print "==> Ignoring above error: {}\n\n".format(msgOnError)
+                    printLog("==> Ignoring above error: {}\n\n".format(msgOnError))
                 return None
             abortError(figwCmd, outputStr)
         LastError = None
@@ -45,13 +45,13 @@ def figwCLI_showRegex(cmdRegexStr, debugKey=None, returnCliError=False, msgOnErr
         else: debug("figwCLI_showRegex OUT = {}".format(value))
     return value
 
-def figwCLI_configCommand(cmd, returnCliError=False, msgOnError=None, waitForPrompt=True): # v2 - Send a FIGW CLI config command
+def figwCLI_configCommand(cmd, returnCliError=False, msgOnError=None, waitForPrompt=True): # v3 - Send a FIGW CLI config command
     # Only supported for family = 'VSP Series' and either a VSP7400 or VSP4900 with FIGW VM installed
     # VSP must be in config mode and cmd must not have any quotes or carriage returns
     global LastError
     figwCmd = CLI_Dict[Family]['figw_cli'].format(cmd)
     if Sanity:
-        print "SANITY> {}".format(figwCmd)
+        printLog("SANITY> {}".format(figwCmd))
         ConfigHistory.append(figwCmd)
         LastError = None
         return True
@@ -62,7 +62,7 @@ def figwCLI_configCommand(cmd, returnCliError=False, msgOnError=None, waitForPro
             if returnCliError: # If we asked to return upon CLI error, then the error message will be held in LastError
                 LastError = outputStr
                 if msgOnError:
-                    print "==> Ignoring above error: {}\n\n".format(msgOnError)
+                    printLog("==> Ignoring above error: {}\n\n".format(msgOnError))
                 return False
             abortError(figwCmd, outputStr)
         ConfigHistory.append(figwCmd)

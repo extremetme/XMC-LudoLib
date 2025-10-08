@@ -1,6 +1,6 @@
 #
 # CLI warp buffer functions (requires cli.py v26)
-# cliWarp.py v11
+# cliWarp.py v12
 #
 import os                           # Used by warpBuffer_execute
 WarpBuffer = []
@@ -12,7 +12,7 @@ def warpBuffer_add(chainStr): # v1 - Preload WarpBuffer with config or configCha
         cmdAdd = re.sub(r'\n.+$', '', cmd) # Strip added CR+y or similar (these are not required when sourcing from file on VOSS and do not work on ERS anyway)
         WarpBuffer.append(cmdAdd)
 
-def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, waitForPrompt=True, historyAppend=True): # v10 - Appends to existing WarpBuffer and then executes it
+def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, waitForPrompt=True, historyAppend=True): # v11 - Appends to existing WarpBuffer and then executes it
     # Same as sendCLI_configChain() but all commands are placed in a script file on the switch and then sourced there
     # Apart from being fast, this approach can be used to make config changes which would otherwise result in the switch becomming unreachable
     # Use of this function assumes that the connected device (VSP) is already in privExec + config mode
@@ -56,7 +56,7 @@ def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, wai
             tftpEnabled = True
     if not tftpEnabled:
         if Sanity:
-            print "SANITY> {}".format(tftpActivate[Family])
+            printLog("SANITY> {}".format(tftpActivate[Family]))
             if historyAppend:
                 ConfigHistory.append(tftpActivate[Family])
         else:
@@ -65,7 +65,7 @@ def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, wai
 
     if Sanity:
         for cmd in WarpBuffer:
-            print "SANITY(warp)> {}".format(cmd)
+            printLog("SANITY(warp)> {}".format(cmd))
             if historyAppend:
                 ConfigHistory.append(cmd)
         LastError = None
@@ -84,7 +84,7 @@ def warpBuffer_execute(chainStr=None, returnCliError=False, msgOnError=None, wai
             f.write("\n") # Make sure we have an empty line at the end, or VSP sourcing won't process last line...
             debug("warpBuffer - write of TFTP config file : {}".format(tftpFilePath))
     except Exception as e: # Expect IOError
-        print "{}: {}".format(type(e).__name__, str(e))
+        printLog("{}: {}".format(type(e).__name__, str(e)))
         exitError("Unable to write to TFTP file '{}'".format(tftpFilePath))
 
     # Make the switch fetch the file and execute it

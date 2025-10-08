@@ -58,6 +58,9 @@ __version__ = '0.1'
 #@MetaDataEnd
 '''
 
+#
+# Variables:
+#
 Debug = False    # Enables debug messages
 Sanity = False   # If enabled, config commands are not sent to host (show commands are operational)
 

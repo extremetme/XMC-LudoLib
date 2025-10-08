@@ -620,7 +620,7 @@ def systemIdXorMask(sysId, mask): # v1 - Perform XOR of system-id with mask
 def macXorMask(mac, mask): # v1 - Perform XOR of MAC address with mask
     return numberToMacAddr(idToNumber(mac) ^ idToNumber(mask))
 
-def idReplMask(inId, mask, value, nibbles=12): # v1 - Replaces masked bits with value provided; nibbles = 12 (MAC/SysId) / 5 (nickname)
+def idReplMask(inId, mask, value, nibbles=12): # v2 - Replaces masked bits with value provided; nibbles = 12 (MAC/SysId) / 5 (nickname)
     bits = nibbles * 4
     inIdNumber = idToNumber(inId)
     maskNumber = idToNumber(mask)
@@ -641,7 +641,7 @@ def idReplMask(inId, mask, value, nibbles=12): # v1 - Replaces masked bits with 
         else:
             valueMaskStr = '0' + valueMaskStr
     if len(valueBinStr):
-        print "idReplMask() remaining value bits {} not inserted !!".format(len(valueBinStr))
+        printLog("idReplMask() remaining value bits {} not inserted !!".format(len(valueBinStr)))
     valueMaskNumber = int(valueMaskStr, base=2)
     debug("vmask    = {} / {}".format(numberToHexStr(valueMaskNumber, nibbles), valueMaskStr))
     maskedIdNumber = inIdNumber & notMaskNumber
@@ -713,7 +713,7 @@ def parseRadiusAttribute(templates, family): # v1 - Returns family template if t
             return templateMatch.group(2)
     return None
 
-def takePolicyDomainLock(policyDomain, waitTime=10, retries=4, forceAfterRetries=2): # v2 - Take lock on opened policy domain
+def takePolicyDomainLock(policyDomain, waitTime=10, retries=4, forceAfterRetries=2): # v3 - Take lock on opened policy domain
     # If we fail to get a lock initially, this could be due to a user holding a lock on the same policy domain
     # Or, it could be another instance of this same workflow running for another switch, doing the same thing
     # (but latter is no longer applicable if acquireLock() is used, so we don't cater for it anymore)
@@ -726,16 +726,16 @@ def takePolicyDomainLock(policyDomain, waitTime=10, retries=4, forceAfterRetries
             retriesCount += 1
             if retriesCount >= retries:
                 exitLockError("Failed to place lock on Policy Domain '{}' after {} retries\n{}".format(policyDomain, retries, LastNbiError))
-            print "Unable to acquire lock on Policy Domain '{}'; re-trying in {} secs".format(policyDomain, waitTime)
+            printLog("Unable to acquire lock on Policy Domain '{}'; re-trying in {} secs".format(policyDomain, waitTime))
             time.sleep(waitTime)
             if retriesCount >= forceAfterRetries:
-                print "Forcing lock on next try"
+                printLog("Forcing lock on next try")
                 forceFlag = True
         else: # Unexpected error
             exitLockError("Failed to place lock on Policy Domain '{}'\n{}".format(policyDomain, LastNbiError))
-    print "Placed lock on Policy Domain '{}'".format(policyDomain)
+    printLog("Placed lock on Policy Domain '{}'".format(policyDomain))
 
-def enforcePolicyDomain(policyDomain, deviceIds=None, waitTime=5, retries=2, checkTime=10): # v1 - Enforce Policy domain and wait for completion
+def enforcePolicyDomain(policyDomain, deviceIds=None, waitTime=5, retries=2, checkTime=10): # v2 - Enforce Policy domain and wait for completion
     # deviceIds, if provided, must be either a single device ID, or a comma separated string of device id numbers
     # If deviceIds is provided the policy enforcement will be done only on those switches, not the whole domain
     # An initial waitTime is done, then repeated in between retries up to the number of retries provided
@@ -749,28 +749,28 @@ def enforcePolicyDomain(policyDomain, deviceIds=None, waitTime=5, retries=2, che
     retryCount = 0
     while pendingEnforce and retryCount <= retries:
         # Take a nap before enforcing the Policy domain, otherwise the enforce can fail if done too quickly after a save..
-        print "Waiting {} seconds before enforcing Policy Domain '{}'".format(waitTime, policyDomain)
+        printLog("Waiting {} seconds before enforcing Policy Domain '{}'".format(waitTime, policyDomain))
         time.sleep(waitTime)
         retryCount += 1
         # Enforce the Policy Domain
         uniqueId = nbiMutation(NBI_Query['enforcePolicyDomain'], POLICYDOMAIN=policyDomain, DEVICEIDLIST=deviceIds) # Enforce the Policy Domain
         if uniqueId:
-            print "Successfully enforced Policy Domain '{}'".format(policyDomain)
+            printLog("Successfully enforced Policy Domain '{}'".format(policyDomain))
             pendingEnforce = False
         else:
-            print "Failed to enforce Policy Domain '{}'\n{}\n".format(policyDomain, LastNbiError)
+            printLog("Failed to enforce Policy Domain '{}'\n{}\n".format(policyDomain, LastNbiError))
             if retryCount <= retries:
-                print "- retry {}".format(retryCount)
+                printLog("- retry {}".format(retryCount))
     if pendingEnforce: # We failed to enforce after several retries...
         exitLockError("Failed to enforce Policy Domain '{}' after {} retries\nError message: {}".format(policyDomain, retries, LastNbiError))
 
     # Now wait until the policy enforce completes, before releasing the lock
     devicesRemaining = 1 # Init to non-zero
     while devicesRemaining > 0:
-        print "Waiting {} seconds before checking if Policy Domain enforce completed".format(checkTime)
+        printLog("Waiting {} seconds before checking if Policy Domain enforce completed".format(checkTime))
         time.sleep(checkTime)
         devicesRemaining = nbiQuery(NBI_Query['checkPolicyEnforceComplete'], UNIQUEID=uniqueId)
-    print "Policy Domain '{}' enforce completed".format(policyDomain)
+    printLog("Policy Domain '{}' enforce completed".format(policyDomain))
 
 def sortNacIpList(ipList): # v1 - Given a list of IPs, returns same list with 1st IP the one set as "Primary" under UserData
     sortedIpList = []
@@ -821,3 +821,19 @@ def writeCsvEmailAttachment(path, warnings, snNameIp): # v2 - Write warnings dic
                 else:
                     csv_writer.writerow({"S/N": sn, "Sysname": snNameIp[sn]["name"], "IP": snNameIp[sn]["ip"], "Warning": warning, "Remediation": ""})
     return csvFilePath
+
+def formatNumber(inputStr): # v1 - If input string is made of decimal digits, returns same string with any preceding zeros stripped
+    return str(int(inputStr)) if inputStr.isdigit() else inputStr
+
+def suppressGarbage(responseText): # v2 - Written to handle garbage unicode characters to RESTCONF responses..; resolved with 'Accept-encoding':  'None'
+    garbageMatch = re.search(r'[\}\]]([^\}\]]+)$', responseText) # We expect response to be JSON and end with either '}' or ']'
+    if garbageMatch: # If not, we look at ant text following last '}' or ']'
+        realGarbage = False # Assume not..
+        for char in garbageMatch.group(1):
+            if ord(char) >= 128: # Oops garbage!
+                realGarbage = True
+                break
+        if realGarbage:
+            printLog(u"\nWARNING: Suppressing garbage at the end of HTTP response text :{}\n".format(garbageMatch.group(1)))
+            return re.sub(r'(?<=[\}\]])[^\}\]]+$', '', responseText) # In the bin!
+    return responseText

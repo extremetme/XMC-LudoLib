@@ -1,6 +1,6 @@
 #
 # Port processing functions
-# port.py v6
+# port.py v7
 #
 RegexPort = re.compile('^(?:[1-9]\d{0,2}[/:])?\d+(?:[/:]\d)?$')
 RegexPortRange = re.compile('^(?:([1-9]\d{0,2})([/:]))?(\d+)(?:[/:](\d))?-(?:([1-9]\d{0,2})[/:])?(\d+)(?:[/:](\d))?$')
@@ -26,7 +26,7 @@ def getSlotPortRanges(): # v1 - Populates the SlotPortRange dict
     SlotPortRange = sendCLI_showRegex(slotCommand[Family])
     debug("getSlotPortRanges = {}".format(SlotPortRange))
 
-def generatePortList(portStr, debugKey=None): # v3 - Given a port list/range, validates it and returns an ordered port list with no duplicates (can also be used for VLAN-id ranges)
+def generatePortList(portStr, debugKey=None): # v4 - Given a port list/range, validates it and returns an ordered port list with no duplicates (can also be used for VLAN-id ranges)
     # This version of this function will not handle port ranges which span slots
     debug("generatePortList IN = {}".format(portStr))
     portDict = {} # Use a dict, will ensure no port duplicate keys
@@ -46,13 +46,13 @@ def generatePortList(portStr, debugKey=None): # v3 - Given a port list/range, va
             endPort = int(rangeMatch.group(6))
             endChan = int(rangeMatch.group(7)) if rangeMatch.group(4) else None
             if endSlot and startSlot != endSlot:
-                print "ERROR! generatePortList no support for ranges spanning slots: {}".format(port)
+                printLog("ERROR! generatePortList no support for ranges spanning slots: {}".format(port))
             elif (startChan or endChan) and endPort and startPort != endPort:
-                print "ERROR! generatePortList no support for ranges spanning channelized ports: {}".format(port)
+                printLog("ERROR! generatePortList no support for ranges spanning channelized ports: {}".format(port))
             elif not (startChan or endChan) and startPort >= endPort:
-                print "ERROR! generatePortList invalid range: {}".format(port)
+                printLog("ERROR! generatePortList invalid range: {}".format(port))
             elif (startChan or endChan) and startChan >= endChan:
-                print "ERROR! generatePortList invalid range: {}".format(port)
+                printLog("ERROR! generatePortList invalid range: {}".format(port))
             else: # We are good
                 if startChan:
                     for portCount in range(startChan, endChan + 1):
@@ -73,13 +73,13 @@ def generatePortList(portStr, debugKey=None): # v3 - Given a port list/range, va
                     for portCount in range(1, int(SlotPortRange[slot]) + 1):
                         portDict[slot + separator + str(portCount)] = 1
                 else:
-                    print "Warning: no range for slot {}; skipping: {}".format(slot, port)
+                    printLog("Warning: no range for slot {}; skipping: {}".format(slot, port))
             else:
-                print "Warning: generatePortList skipping star range as not supported on this switch type: {}".format(port)
+                printLog("Warning: generatePortList skipping star range as not supported on this switch type: {}".format(port))
         elif RegexPort.match(port): # Port is in valid format
             portDict[port] = 1
         else: # Port is in an invalid format; don't add to dict, print an error message, don't raise exception 
-            print "Warning: generatePortList skipping unexpected port format: {}".format(port)
+            printLog("Warning: generatePortList skipping unexpected port format: {}".format(port))
 
     # Sort and return the list as a comma separated string
     portList = sorted(portDict, key=portValue)

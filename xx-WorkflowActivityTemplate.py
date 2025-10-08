@@ -4,8 +4,6 @@ try:
     workflowVersion = emc_vars["wrkfl_VERSION"]
 except:
     workflowVersion = None
-print "Workflow version {} on XIQ-SE/XMC version {}".format(workflowVersion, emc_vars["serverVersion"])
-print "Activity: WorkflowActivityTemplate_xx version {}".format(__version__)
 # Written by Ludovico Stevens, Solution Engineering Extreme Networks
 # Library of functions used in this script can be found here:
 # https://github.com/extremetme/XMC-LudoLib
@@ -87,6 +85,11 @@ except:
 # Main:
 #
 def main():
+
+#    setupDebugFileLogging() # Debugging to /dev/shm/<exec-id>_<workflow-path>/<activity>
+    printLog("Workflow version {} on XIQ-SE/XMC version {}".format(workflowVersion, emc_vars["serverVersion"]))
+    printLog("Activity: WorkflowActivityTemplate_xx version {}".format(__version__))
+
 #    if emc_vars["inst_device_success"].lower() != 'true': # For multi-device workflows, on all activities but the first
 #        exitError("Failing this activity for device {} as previous activity failed for same device".format(emc_vars['deviceIP']))
 
@@ -111,12 +114,12 @@ def main():
 
 
     # Display all input data
-    print
-    print "Input Data:"
-    print " - Selected Switch IP = {}".format(ipAddress)
-    print " - CLI retries = {}".format(cliRetries)
-    print " - CLI retry delay = {}".format(cliRetryDelay)
-    print
+    printLog
+    printLog("Input Data:")
+    printLog(" - Selected Switch IP = {}".format(ipAddress))
+    printLog(" - CLI retries = {}".format(cliRetries))
+    printLog(" - CLI retry delay = {}".format(cliRetryDelay))
+    printLog
 
 
     # Disable more paging
@@ -146,7 +149,12 @@ def main():
     # Exit code will be success if we get here
 #    emc_results.put("inst_device_success",  "true") # For multi-device workflows
     emc_results.setStatus(emc_results.Status.SUCCESS)
-    print "Exit code SUCCESS"
+    printLog("Exit code SUCCESS")
 
-main()
+try:
+    main()
+except Exception:
+    emc_results.setStatus(emc_results.Status.ERROR)
+    printLog(traceback.format_exc())
+
 # END *** WorkflowActivityTemplate_xx ***

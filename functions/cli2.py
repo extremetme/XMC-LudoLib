@@ -1,9 +1,9 @@
 #
 # CLI functions2 - (requires cli.py; use of #block directive in sendCLI_configChain2() requires cliWarp.py)
-# cli2.py v4
+# cli2.py v5
 #
 
-def sendCLI_configChain2(chainStr, returnCliError=False, msgOnError=None, waitForPrompt=True, abortOnError=True): # v3 - Enhanced sendCLI_configChain with embedded directives
+def sendCLI_configChain2(chainStr, returnCliError=False, msgOnError=None, waitForPrompt=True, abortOnError=True, initCmdList=[], initRetries=0, initRetryDelay=0): # v4 - Enhanced sendCLI_configChain with embedded directives
     # Syntax: chainStr can be a multi-line string where individual commands are on new lines or separated by the semi-colon ";" character
     # Some embedded directive commands are allowed, these must always begin with the hash "#" character:
     # #error fail       : If a subsequent command generates an error, make the entire script fail
@@ -12,10 +12,14 @@ def sendCLI_configChain2(chainStr, returnCliError=False, msgOnError=None, waitFo
     # #block start [n]  : Mark the beginning of a block of commands which will need to be sourced locally on the switch; requires warpBuffer functions
     #                     Used for commands which would otherwise temporarily compromise SSH/Telnet connectivity to the switch
     #                     [n] = Optional number of seconds to sleep after block execution
-    # #block execute [n]: Mark the end of block of commands which are to sourced locally on the switch
+    # #block execute [wait|reconnect] [n]: Mark the end of block of commands which are to sourced locally on the switch
     #                     If this directive is not seen, and the "#block start" was seen, all commands from the start of
     #                     block section to the last command in the list will be sourced locally on the switch using warpBuffer_execute()
     #                     [n] = Optional number of seconds to sleep after block execution
+    #                     [wait|reconnect]: "wait" will simply keep the same CLI session, and just wait [n] secs before resuming;
+    #                     "reconnect" will instead tear down the CLI session after the wait [n], and bring up a fresh new CLI session;
+    #                     since a new CLI session is started, this option allows a list of commands to be re-fed into the new session
+    #                     via initCmdList input; "wait" is the default if [n] provided 
     # #sleep <secs>     : Sleep for specified seconds
     cmdList = configChain(chainStr)
 
@@ -28,17 +32,21 @@ def sendCLI_configChain2(chainStr, returnCliError=False, msgOnError=None, waitFo
     warpBlockLines = 0
     warpBlockExec = False
     warpBlockWait = 0
+    warpBlockReconnect = False
     for cmd in cmdList[:-1]: # All but last line
         embeddedWarpBlock = RegexEmbeddedWarpBlock.match(cmd)
         embeddedErrMode = RegexEmbeddedErrMode.match(cmd)
         embeddedSleep = RegexEmbeddedSleep.match(cmd)
         if embeddedWarpBlock and "warpBuffer_execute" in globals():
             warpBlockCmd = embeddedWarpBlock.group(1)
-            warpBlockTimer = embeddedWarpBlock.group(2)
+            warpBlockMode = embeddedWarpBlock.group(2)
+            warpBlockTimer = embeddedWarpBlock.group(3)
             debug("sendCLI_configChain2() directive #block {}".format(warpBlockCmd))
             if warpBlockTimer:
                 warpBlockWait = int(warpBlockTimer)
                 debug("sendCLI_configChain2() directive #block waitTimer = {}".format(warpBlockWait))
+                warpBlockReconnect = True if warpBlockMode == "reconnect" else False
+                debug("sendCLI_configChain2() directive #block reconnect mode = {}".format(warpBlockReconnect))
             if warpBlockCmd == 'start':
                 warpBlock = True
                 continue # Next command
@@ -65,14 +73,24 @@ def sendCLI_configChain2(chainStr, returnCliError=False, msgOnError=None, waitFo
                 warpBuffer_execute(None, waitForPrompt=False)
                 debug("sendCLI_configChain2() #block exec sleeping {} secs after execute".format(warpBlockWait))
                 time.sleep(warpBlockWait)
-                debug("sendCLI_configChain2() sending carriage return after sleep")
-                emc_cli.send('') # Empty send, to re-sync output buffer
+                if warpBlockReconnect: # Reconnect mode
+                    emc_cli.close()
+                    debug("sendCLI_configChain2() re-connecting new CLI session after sleep")
+                    if not initCmdList:
+                        initCmdList.append('') # We want to send at very least an empty command
+                    for initCmd in initCmdList:
+                        sendCLI_showCommand(initCmd, retries=initRetries, retryDelay=initRetryDelay)
+                else: # Wait mode
+                    debug("sendCLI_configChain2() sending carriage return after sleep")
+                    emc_cli.send('') # Empty send, to re-sync output buffer
                 success = sendCLI_configCommand('', returnCliError, msgOnError)
             else:
                 success = warpBuffer_execute(None, returnCliError, msgOnError)
             warpBlock = False
             warpBlockLines = 0
             warpBlockExec = False
+            warpBlockWait = 0
+            warpBlockReconnect = False
         else:
             success = sendCLI_configCommand(cmd, returnCliError, msgOnError)
         if not success:

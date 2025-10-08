@@ -88,67 +88,43 @@ Family = 'Summit Series'
 #Family = 'ISW-Series-Marvell'
 
 
-inputStr = '''
-/root/file.txt
-
-'''
-print ifFileReadFile(inputStr)
-sys.exit(0)
-
-
-
 
 # Testing ACT logic
-#configFile='act-template.txt'
-#configFile='test-template.txt'
-#configFile='lui-template.txt'
-configFile='AreaNodeTmpl.txt'
-#serialNumber         = '2128Q-40044'
-serialNumber         = 'SB012105G-00040'
+configFile='GSS-Template.txt'
+serialNumber         = '2128Q-40044'
 csvFile='mgmtdata.csv'
 lookup               = serialNumber
-#csvVarDict       = readCsvToDict(csvFile, lookup)
-csvVarDict = {
-    "SB012105G-00040": {
-        "locId": "015", 
-        "mgmtClip": "10.15.0.1", 
-        "nodeId": "01", 
-        "nodeType": "disti", 
-        "siteName": "/World/CMPa", 
-        "sysName": "CMPa-421"
-    }, 
-    "__INDEX__": "Serial Number", 
-    "__LOOKUP__": "SB012105G-00040", 
-    "__PATH__": "/root/SG-Nodes/NewNodesData.csv"
-}
+csvVarDict       = readCsvToDict(csvFile, lookup)
+#csvVarDict = {
+#    "SB012105G-00040": {
+#        "locId": "015", 
+#        "mgmtClip": "10.15.0.1", 
+#        "nodeId": "01", 
+#        "nodeType": "disti", 
+#        "siteName": "/World/CMPa", 
+#        "sysName": "CMPa-421"
+#    }, 
+#    "__INDEX__": "Serial Number", 
+#    "__LOOKUP__": "SB012105G-00040", 
+#    "__PATH__": "/root/SG-Nodes/NewNodesData.csv"
+#}
 
 siteVarDict = {
-    "__PATH__": "/World/CMPa", 
-    "dataIsid": "", 
-    "dataVlan": "", 
-    "date": "04/17/2025 05:32:35 PM", 
-    "deviceIP": "10.15.0.1", 
-    "deviceName": "CMPa-421", 
-    "deviceSysOid": "1.3.6.1.4.1.1916.2.441", 
-    "deviceType": "5520-12MW-36W-FabricEngine", 
-    "dvrLeaf": "disable", 
-    "faMgmtIsid": "10150005", 
-    "faMgmtVlan": "5", 
+    "__PATH__": "/World/Branches-A", 
+    "date": "06/28/2025 11:29:56 AM", 
+    "deviceIP": "10.0.1.1", 
+    "deviceName": "BN-A1", 
+    "deviceNosId": "nos-id-fabric-engine", 
+    "deviceSysOid": "1.3.6.1.4.1.1916.2.437", 
+    "deviceType": "5520-24T-FabricEngine", 
     "family": "Universal Platform Fabric Engine", 
-    "locationGroup": "", 
-    "nacEnable": "enable", 
-    "nodeDataFile": "/root/SG-Nodes/NewNodesData.csv", 
-    "nodeTemplateFile": "/root/SG-Nodes/AreaNodeTmpl.txt", 
-    "prefixIsid": "1017", 
-    "radiusTemplate": "Fabric Engine Edge", 
-    "serverIP": "10.7.255.5", 
-    "serverName": "xiqse.singapore.ctc.local", 
-    "voiceIsid": "0011", 
-    "voiceVlan": "11", 
-    "waitInterval": "", 
-    "wapType1Isid": "10150008", 
-    "wapType1Vlan": "8"
+    "serverIP": "10.255.254.1", 
+    "serverName": "scjgssxiqse.scjgss.go.jp"
 }
+
+
+sys.exit(0)
+
 
 
 try:

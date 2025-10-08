@@ -9,7 +9,7 @@ VistIPbase = ('192.168.255.0', '255.255.255.252') #/30
 
 # Regexes:
 # Port (VOSS):\d+/\d+(?:/\d+)?
-# Port (EXOS):\d+(?::\d+)?
+# Port (EXOS):\d+(?::\d+(?::\d+)?)?
 # MAC :[\da-f:]+
 # IPv4:\d+\.\d+\.\d+\.\d+
 CLI_Dict = {
@@ -524,8 +524,10 @@ CLI_Dict = {
         'get_4k_brouter_vlans'       : 'list://show brouter||^\s*\d+/\d+(?:/\d+)? +(4\d{3})',
         'get_4k_platform_vlans'      : 'list://show vlan basic||^(4\d{3})\s',
         'get_platform_vlans'         : 'list://show vlan basic||^(\d+) ',
-        'get_platform_vlans_names'   : 'dict://show vlan basic||^(\d+) +(\S.+\S) +\S+ +\d+ +\S',
         'get_platform_vlan_types'    : 'dict://show vlan basic||^(\d+) +.+? +(\S+) +\d+ ',
+        'get_platform_vlans_names'   : 'dict://show vlan basic||^(\d+) +(\S.+\S) +(?:byPort|private)',
+        'get_port_autosense_state'   : 'dict://show interfaces gigabitEthernet auto-sense||^(\d+/\d+(?:/\d+)?) +Enable +(VOICE|UNI|FA) ',
+        'get_port_names'             : 'dict://show interfaces gigabitEthernet name||^(\d+/\d+(?:/\d+)?) +(\S.+\S) +\S+ +(?:up|down)',
         'get_sdwan'                  : 'bool://show interfaces gigabitEthernet auto-sense||SD-WAN',
         'get_smlt_role'              : 'str://show virtual-ist||(Slave|Master)',
         'get_running_config'         : 'show running-config',
@@ -558,6 +560,7 @@ CLI_Dict = {
         'list_fe_tunnels_dest'       : 'dict://show isis logical-interface||^(\d+) +\S.*\S +IP +-- +-- +(\d+\.\d+\.\d+\.\d+) ',
 #        'list_fe_tunnels_name'       : 'dict://show isis logical-interface name||^(\d+) +(\S.*\S)',
         'list_fe_tunnels_name'       : 'dict-reverse://show isis logical-interface name||^(\d+) +(\S.*\S)',
+        'list_ip_interface_data'     : 'list://show ip interface vrfids 0-511||^(Vlan\d+|Port\d+\/\d+) +(\d+\.\d+\.\d+\.\d+) +(\d+\.\d+\.\d+\.\d+) +\S+ +(?:up|down) +\S+ +(?:true|false) +\S+ +(.*)',
         'list_isis_areas'            : 'dict-reverse://show isis area||^([\da-f]+(?:\.[\da-f]+)+) +\S+ +(HOME|REMOTE)',
         'list_l3vsn_vrf_names_pre83' : 'dict-both://show ip ipvpn||^\s+VRF Name\s+: (\S+)\n(?:\s+(?:Ipv[46] )?Ipvpn-state\s+: \w+\n)*\s+I-sid\s+: (\S+)',
         'list_l3vsn_vrf_names'       : 'dict-both://show ip ipvpn||^(\S+) +\d+ +\S+ +(?:\S+ +)?(\d+)',
@@ -571,6 +574,7 @@ CLI_Dict = {
         'list_mlt_lacp_key'          : 'dict://show lacp interface mlt||^(\d+) +\d+ +\d+ +\S+ +\d+ +(\d+)',
         'list_ntp_servers'           : 'list://show ntp server ||^(\d+\.\d+\.\d+\.\d+)',
         'list_oob_mgmt_ips'          : 'list://show ip interface vrfids 512||^(?:Portmgm\d?|MgmtVirtIp|mgmt-oob) +(\d+\.\d+\.\d+\.\d+)',
+        'list_poe_delivering_ports'  : 'list://show poe-port-status||^(\d+/\d+(?:/\d+)?) +Enable +DeliveringPower',
         'list_port_lacp_key'         : 'dict://show lacp actor-oper interface||^(\d+/\d+(?:/\d+)?) +(\d+)',
         'list_port_up_speed'         : 'dict://show interfaces gigabitEthernet name {}||^(\d+/\d+(?:/\d+)?).+?up +full +(\d+) +\S+$', # Port list
         'list_port_voss_neighbours'  : 'dict://show lldp neighbor summary port {}||^(\d+/\d+(?:/\d+)?) +LLDP +\S+ +(\S+) +\S+ +\S+ +(?:VSP|XA)', # Port list
@@ -593,19 +597,19 @@ CLI_Dict = {
         'measure_l2ping_rtt'         : 'tuple://l2 ping vlan {} routernodename {} burst-count {}||min/max/ave/stdv = +\d+/\d+/(\d+\.\d+)/ *(\d+\.\d+)', # BVLAN, Sysname, Burst
 
         'port_add_vlan'              : 'vlan members add {} {}', # VLAN id, Ports
-        'port_disable'               : 'shutdown',
+        'port_disable'               : 'interface gigabitEthernet {}; shutdown; exit', # Port list
         'port_disable_lacp'          : 'no lacp enable; no lacp aggregation enable; default lacp',
-        'port_disable_poe'           : 'interface gigabitEthernet {}; poe poe-shutdown', # Port list
+        'port_disable_poe'           : 'interface gigabitEthernet {}; poe poe-shutdown; exit', # Port list
         'port_disable_slpp_guard'    : 'no slpp-guard enable',
         'port_disable_spoof_detect'  : 'no spoof-detect',
         'port_disable_tagging'       : 'no encapsulation dot1q',
         'port_disable_vlacp'         : 'default vlacp',
         'port_disable_with_stp'      : 'interface gigabitEthernet {}; shutdown; spanning-tree mstp force-port-state enable; exit', # Port list
-        'port_enable'                : 'no shutdown',
+        'port_enable'                : 'interface gigabitEthernet {}; no shutdown; exit', # Port list
         'port_enable_lacp'           : 'lacp key {} aggregation enable timeout-time short; lacp enable', # LACP key
         'port_enable_lacp_indi'      : 'lacp timeout-time short; lacp enable',
         'port_enable_no_stp'         : 'interface gigabitEthernet {}; no spanning-tree mstp\ny; no shutdown; exit', # Port list
-        'port_enable_poe'            : 'interface gigabitEthernet {}; no poe-shutdown', # Port list
+        'port_enable_poe'            : 'interface gigabitEthernet {}; no poe-shutdown; exit', # Port list
         'port_enable_slpp_guard'     : 'slpp-guard enable',
         'port_enable_spoof_detect'   : 'spoof-detect',
         'port_enable_vlacp'          : 'vlacp fast-periodic-time 500 timeout short timeout-scale 5 funcmac-addr 01:80:c2:00:00:0f; vlacp enable',
@@ -773,6 +777,7 @@ CLI_Dict = {
         'delete_all_syslog_servers'  : 'configure syslog delete all',
         'delete_cvlan'               : 'delete vlan {}', # VLAN id
         'delete_cvlan_uni'           : 'configure vlan {0} delete ports {1}', # {0} = VLAN id; {1} = port-list
+        'delete_default_vlan'        : 'configure vlan 1 delete ports {}', # Ports
         'delete_ip_gateway'          : 'configure iproute delete default {}', # Gateway IP
         'delete_mirror_ean'          : 'delete mirror EAN',
         'delete_vlan_ip'             : 'unconfigure vlan {} ipaddress', # VLAN id
@@ -785,25 +790,28 @@ CLI_Dict = {
         'enable_fa_message_auth'     : 'configure fabric attach ports all authentication enable',
         'enable_igmp_on_vlan'        : 'enable igmp vlan {} IGMPv{}', # VLAN name, IGMP Version 1/2/3
 
-        'get_default_gateway'        : 'str://show iproute vlan {} ||Default Route +(\d+\.\d+\.\d+\.\d+) +\d+ +[UGSumf-]', # VLAN name
-        'get_mirror_ean_to_from_ip'  : 'list-diagonal://show mirror EAN ||(?:\((Enabled|Disabled)\)|Mirror to remote IP: (\d+\.\d+\.\d+\.\d+) |From IP +: (\d+\.\d+\.\d+\.\d+) )', # returns: state, destIP, fromIP
         'get_chassis_mac'            : 'str://show switch | include "System MAC"||^System MAC: +(\S+)',
         'get_cvlan_isid'             : 'str://show vlan {0} fabric attach assignments||^ +{0} +\S+ +(?:Static|Dynamic) +(\d+)', # VLAN id
         'get_cvlan_name'             : 'str://show vlan||^(\S+) +{0}\s', # VLAN id
+        'get_default_gateway'        : 'str://show iproute vlan {} ||Default Route +(\d+\.\d+\.\d+\.\d+) +\d+ +[UGSumf-]', # VLAN name
+        'get_fa_srv_untagged_uplinks': 'list://show fabric attach elements ||^(?:[\da-f]{2}-){9}[\da-f]{2} +((?:\d+:)?\d+) +Server(?: \(No Auth\))? +4095 ',
         'get_ip_vr'                  : 'str://show vlan|| {}[ /].+? (\S+) *$', # IP
         'get_isid_cvlan'             : 'str://show vlan fabric attach assignments||^ +(\d+) +\S+ +Static +{0}', # Isid
         'get_mac_address'            : 'show switch||^System MAC: +(\S+)',
         'get_mgmt_ip_mask'           : 'int://show vlan | include {0}||{0} +\/(\d\d?) ', # IP address
-        'get_mgmt_vlan_and_mask'     : 'tuple://show vlan | include {0}||(\d+) +{0} +\/(\d\d?) ', # IP address
+        'get_mgmt_vlan_and_mask'     : 'tuple://show vlan | include {0}||(\d+) +{0} *\/(\d\d?) ', # IP address
+        'get_mirror_ean_to_from_ip'  : 'list-diagonal://show mirror EAN ||(?:\((Enabled|Disabled)\)|Mirror to remote IP: (\d+\.\d+\.\d+\.\d+) |From IP +: (\d+\.\d+\.\d+\.\d+) )', # returns: state, destIP, fromIP
         'get_mlt_data'               : 'list://show sharing||^ +(?:((?:\d+:)?\d+)(?: +(?:\d+:)?\d+)? +(LACP|Static) +\d+ +)?\w+(?: +\w+)? +((?:\d+:)?\d+)',
         'get_running_config'         : 'show configuration',
         'get_software_version'       : 'str://show version ||^Image +: .+ version ([\d\.]+)[ -]', # If version 32.7.1.9-patch1-49, will return only 32.7.1.9
         'get_static_vlan_isids'      : 'dict-both://show fabric attach assignments||^(?:\d[\d:]*)? +(\d+) +\S+ +Static +(\d+) ',
         'get_vlan_isids'             : 'dict-both://show fabric attach assignments||^(?:\d[\d:]*)? +(\d+) +\S+ +\S+ +(\d+) ',
+        'get_vlan_names'             : 'dict://show vlan||^(\S+) +(\d+) ',
         'get_vm_data'                : 'list://show vm detail | include Memory|CPUs|Slot||(?:Memory size: +(\d+) MB|CPUs: +(\d)|Slot: +(\d))',
 
         'list_all_vlans'             : 'dict-reverse://show vlan ||^(\S+) +(\d+) ',
         'list_fa_elements'           : 'list://show fabric attach elements||^((?:[\da-f]{2}-){5}[\da-f]{2})-((?:[\da-f]{2}-){3}[\da-f]{2}) +((?:\d+:)?\d+) +(.+?) +(?:\d+|None)\s\S',
+        'list_ip_interface_data'     : 'list://show vlan | exclude VR-Mgmt||^(\S+) +\d+ +(\d+\.\d+\.\d+\.\d+) *\/(\d\d?) ',
 
         'port_add_vlan_tagged'       : 'configure vlan {} add ports {} tagged', # VLAN id, Ports
         'port_add_vlan_untagged'     : 'configure vlan {} add ports {} untagged', # VLAN id, Ports

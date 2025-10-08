@@ -1,8 +1,15 @@
 #
 # XMC GraphQl & RESTCONF & XIQ API required functions
-# apiBase.py v6
+# apiBase.py v7
 #
 from java.util import LinkedHashMap
+HTTP_RESONSE_OK = {
+    'GET':      [200],
+    'PUT':      [200,201],
+    'POST':     [201],
+    'PATCH':    [200],
+    'DELETE':   [200,204],
+}
 
 def recursionKeySearch(nestedDict, returnKey): # v2 - Used by both nbiQuery() and nbiMutation() and restconfCall()
     for key, value in nestedDict.iteritems():

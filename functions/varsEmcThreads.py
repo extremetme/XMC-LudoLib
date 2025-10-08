@@ -1,6 +1,6 @@
 #
 # XMC Emc threads vars
-# varsEmcThreads.py v3
+# varsEmcThreads.py v4
 #
 
 #
@@ -50,7 +50,7 @@ GlobSqJson = '.' + UserName + '.' + ThisScript + '.*.<SEQ>.json'
 #
 # FUNCTIONS:
 #
-def threadFile(ip, seqnum=None, suffix=None): # Given IP and suffix, returns the script instance specific filenames
+def threadFile(ip, seqnum=None, suffix=None): # v1 - Given IP and suffix, returns the script instance specific filenames
     fileName = '.' + UserName + '.' + ThisScript + '.' + ip.replace('.', '_')
     if seqnum != None:
         fileName += '.' + str(seqnum)
@@ -58,39 +58,39 @@ def threadFile(ip, seqnum=None, suffix=None): # Given IP and suffix, returns the
         fileName += '.' + suffix
     return fileName
 
-def threadIP(filename): # Given a thread filename, returns the thread IP
+def threadIP(filename): # v1 - Given a thread filename, returns the thread IP
     ipMatch = RegexFileIP.match(filename)
     if not ipMatch:
         exitError("Unable to extract IP from thread filename '{}'".format(filename))
     ip = ipMatch.group(1)
     return ip.replace('_', '.')
 
-def deleteFiles(globStr): # Deletes all existing sequence files for this thread
+def deleteFiles(globStr): # v1 - Deletes all existing sequence files for this thread
     fileList = glob.glob(globStr)
     if fileList:
         debug("Threads - deleteFiles() deleting files : {}".format(fileList))
         for f in fileList:
             os.remove(f)
 
-def touch(path): # Touches a file (and sets its modify time)
+def touch(path): # v2 - Touches a file (and sets its modify time)
     try:
         with open(path, 'a'):
             os.utime(path, None)
             debug("Threads - touch() file : {}".format(path))
     except Exception as e: # Expect IOError
-        print "{}: {}".format(type(e).__name__, str(e))
+        printLog("{}: {}".format(type(e).__name__, str(e)))
         exitError("Unable to touch file '{}'".format(path))
 
-def writeJson(dataDict, path): # Writes a dict to json file
+def writeJson(dataDict, path): # v2 - Writes a dict to json file
     try: # Python file locking https://yakking.branchable.com/posts/flocking/
         with open(path, 'w') as f:
             json.dump(dataDict, fp=f, indent=4)
             debug("Threads - writeJson() file : {}".format(path))
     except Exception as e: # Expect IOError
-        print "{}: {}".format(type(e).__name__, str(e))
+        printLog("{}: {}".format(type(e).__name__, str(e)))
         exitError("Unable to write to json file '{}'".format(path))
 
-def emc_threads(returnOnError=None): # Returns list of IPs for other instances simultaneously running this same script
+def emc_threads(returnOnError=None): # v1 - Returns list of IPs for other instances simultaneously running this same script
     global ThreadIPs
     global ReturnOnError
 
@@ -162,7 +162,7 @@ def emc_threads(returnOnError=None): # Returns list of IPs for other instances s
                     os.remove(fdel)
     return ThreadIPs
 
-def emc_threads_vars(ip=None, var=None, returnOnError=None): # Returns variable dict from other instances simultaneously running this same script
+def emc_threads_vars(ip=None, var=None, returnOnError=None): # v2 - Returns variable dict from other instances simultaneously running this same script
     # If both ip and var is set, returns value of variable
     # If only ip is set, returns dict of ip's Emc_vars_copy
     # If neither ip nor var is set, returns full dict where 1st key is thread ip and 2nd key are Emc_vars_copy keys
@@ -210,14 +210,14 @@ def emc_threads_vars(ip=None, var=None, returnOnError=None): # Returns variable 
                             debug("-> reading file = {}".format(path))
                             ThreadVarsDict[newip] = json.load(fp=f)
                     except Exception as e: # Expect IOError or ValueError
-                        print "{}: {}".format(type(e).__name__, str(e))
+                        printLog("{}: {}".format(type(e).__name__, str(e)))
                         if newip not in failedFirstRead: # We allow 1 retry
                             failedFirstRead[newip] = 1
-                            print "Threads - WARNING: Unable to read Emc_vars_copy for IP instance {} on first try".format(newip)
+                            printLog("Threads - WARNING: Unable to read Emc_vars_copy for IP instance {} on first try".format(newip))
                             time.sleep(1) # Delay 1 sec before retry
                             continue
                         if returnOnError:
-                            print "Threads - WARNING: Unable to read Emc_vars_copy for IP instance {}".format(newip)
+                            printLog("Threads - WARNING: Unable to read Emc_vars_copy for IP instance {}".format(newip))
                             ThreadVarsDict[newip] = {}
                         else:
                             exitError("Unable to read to json file '{}'".format(path))
@@ -228,7 +228,7 @@ def emc_threads_vars(ip=None, var=None, returnOnError=None): # Returns variable 
                 if time.time() > timeoutTime: # We timeout
                     missingIPList = [x for x in ThreadIPs if x not in ThreadVarsDict]
                     if returnOnError:
-                        print "Threads - WARNING: Unable to read Emc_vars_copy from these thread IPs: {}".format(missingIPList)
+                        printLog("Threads - WARNING: Unable to read Emc_vars_copy from these thread IPs: {}".format(missingIPList))
                         for failip in missingIPList:
                             ThreadVarsDict[failip] = {}
                     else:
@@ -245,7 +245,7 @@ def emc_threads_vars(ip=None, var=None, returnOnError=None): # Returns variable 
     else:
         return ThreadVarsDict
 
-def emc_threads_put(**dict): # Set a local Emc_vars_copy variable and ensure this becomes available to other instances simultaneously running this same script
+def emc_threads_put(**dict): # v1 - Set a local Emc_vars_copy variable and ensure this becomes available to other instances simultaneously running this same script
     global ThreadVarsDict
     global SeqNumber
 
@@ -269,7 +269,7 @@ def emc_threads_put(**dict): # Set a local Emc_vars_copy variable and ensure thi
 #
 # INIT: Init code for Threads; signal self thread existence and store Emc_vars_copy as json; we do this as early as possible
 #
-print "Threads - StartTime = {}".format(StartTime)
+printLog("Threads - StartTime = {}".format(StartTime))
 debug("Threads - ThisScript = {}".format(ThisScript))
 debug("Threads - WorkDir = {}".format(WorkDir))
 deleteFiles(GlobSeqnce)

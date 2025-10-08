@@ -1,6 +1,13 @@
 #
 # XIQ-API functions - (requires apiBase.py)
-# apiXiq.py v1
+# apiXiq.py v2
+#
+# Example (see apiXiqDict.py for XIQAPI[] definitions):
+#xiqapiLogin(username='<email>', password='<password>')
+#response = xiqapiCall(XIQAPI["listDevices"])
+#if LastXiqApiError:
+#    printLog("LastXiqApiError = {}".format(LastXiqApiError))
+#printLog("response =\n{}".format(json.dumps(response, indent=4, sort_keys=True)))
 #
 import requests, json
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
@@ -22,7 +29,7 @@ def xiqapiSession(authToken=None): # v1 - On XMC we don't seem to be able to re-
     return session
 
 
-def xiqapiLogin(username=None, password=None): # v1 - Login to XIQ API and obtain the access token
+def xiqapiLogin(username=None, password=None): # v2 - Login to XIQ API and obtain the access token
     global XiqApiAuthToken
     loginUrl = XiqApiUrl + 'login'
     jsonBody = {
@@ -36,7 +43,7 @@ def xiqapiLogin(username=None, password=None): # v1 - Login to XIQ API and obtai
             try:
                 result    = response.json()
                 XiqApiAuthToken = result[u'access_token']
-                print "XIQ API login successful for user {}".format(username)
+                printLog("XIQ API login successful for user {}".format(username))
                 return True
             except:
                 abortError("XIQ API response {}".format(response.text), "JSON decoding failed")
@@ -49,7 +56,7 @@ def xiqapiLogin(username=None, password=None): # v1 - Login to XIQ API and obtai
     return False
 
 
-def xiqapiCall(xiqapiDict, returnKeyError=False, debugKey=None, **kwargs): # v1 - Makes an XIQ-API call
+def xiqapiCall(xiqapiDict, returnKeyError=False, debugKey=None, **kwargs): # v2 - Makes an XIQ-API call
     if not XiqApiAuthToken:
         exitError("xiqapiCall() cannot be called without first obtaining an access token via xiqapiLogin()")
     global LastXiqApiError
@@ -62,15 +69,15 @@ def xiqapiCall(xiqapiDict, returnKeyError=False, debugKey=None, **kwargs): # v1 
     jsonBody = json.loads(jsonStr) if jsonStr else None
     returnKey = xiqapiDict['key'] if 'key' in xiqapiDict else None
     if Sanity and httpCall.lower() != 'get':
-        print "SANITY - XIQAPI call: {}\n{}".format(xiqUri ,json.dumps(jsonBody, indent=4, sort_keys=True))
+        printLog("SANITY - XIQAPI call: {}\n{}".format(xiqUri ,json.dumps(jsonBody, indent=4, sort_keys=True)))
         LastXiqApiError = None
         return []
 
     # Display info about the XIQAPI call we are about to perform
     if jsonBody:
-        print "\XIQAPI call: {} {}{}\n{}".format(httpCall, XiqApiUrl, xiqUri ,json.dumps(jsonBody, indent=4, sort_keys=True))
+        printLog("\XIQAPI call: {} {}{}\n{}".format(httpCall, XiqApiUrl, xiqUri ,json.dumps(jsonBody, indent=4, sort_keys=True)))
     else:
-        print "\XIQAPI call: {} {}{}".format(httpCall, XiqApiUrl, xiqUri)
+        printLog("\XIQAPI call: {} {}{}".format(httpCall, XiqApiUrl, xiqUri))
 
     # Implement loop to fetch all pages of data, if XIQ returns data in pages
     returnData = [] # Init as a list, in case we fall into multiple pages of output data

@@ -1,6 +1,6 @@
 #
 # CSV data input
-# varsCsv.py v17
+# varsCsv.py v19
 #
 import os.path
 import csv
@@ -8,7 +8,7 @@ import json
 import re
 import io
 
-def readCsvToDict(csvFilePath, lookup=None, delimiter=','): # v8 - Read CSV data file, return dict with data
+def readCsvToDict(csvFilePath, lookup=None, delimiter=','): # v9 - Read CSV data file, return dict with data
     # It is expected that the 1st CSV row has the column value keys
     # And that the index to data are the values in column 0
     # Row0 Column0 is returned as 2nd value
@@ -19,15 +19,15 @@ def readCsvToDict(csvFilePath, lookup=None, delimiter=','): # v8 - Read CSV data
     #    3.3.3.3, 13,   23,   11
     # With lookup=None returns csvVarDict:
     # {
-    #    "1.1.1.1": { "var1": 11, "var2": 21, "var3": 10 },
-    #    "2.2.2.2": { "var1": 12, "var2": 22, "var3": 10 },
-    #    "3.3.3.3": { "var1": 13, "var2": 23, "var3": 11 },
+    #    "1.1.1.1": { "ip": "1.1.1.1", "var1": 11, "var2": 21, "var3": 10 },
+    #    "2.2.2.2": { "ip": "2.2.2.2", "var1": 12, "var2": 22, "var3": 10 },
+    #    "3.3.3.3": { "ip": "3.3.3.3", "var1": 13, "var2": 23, "var3": 11 },
     #    "__PATH__": csvFilePath,
     #    "__INDEX__": "ip",
     # }
     # With lookup="1.1.1.1" returns csvVarDict:
     # {
-    #    "1.1.1.1": { "var1": 11, "var2": 21, "var3": 10 },
+    #    "1.1.1.1": { "ip": "1.1.1.1", "var1": 11, "var2": 21, "var3": 10 },
     #    "__PATH__": csvFilePath,
     #    "__INDEX__": "ip",
     #    "__LOOKUP__": "1.1.1.1",
@@ -39,8 +39,8 @@ def readCsvToDict(csvFilePath, lookup=None, delimiter=','): # v8 - Read CSV data
     #    3.3.3.3, 13,   23,   11
     # With lookup="1.1.1.1" returns csvVarDict and also peer which has same value in var3:
     # {
-    #    "1.1.1.1": { "var1": 11, "var2": 21, "var3": 10 },
-    #    "2.2.2.2": { "var1": 12, "var2": 22, "var3": 10 },
+    #    "1.1.1.1": { "ip": "1.1.1.1", "var1": 11, "var2": 21, "var3": 10 },
+    #    "2.2.2.2": { "ip": "2.2.2.2", "var1": 12, "var2": 22, "var3": 10 },
     #    "__PATH__": csvFilePath,
     #    "__INDEX__": "ip",
     #    "__LOOKUP__": "1.1.1.1",
@@ -71,6 +71,7 @@ def readCsvToDict(csvFilePath, lookup=None, delimiter=','): # v8 - Read CSV data
                         while len(rowcopy) < len(valueKeys): # In case CSV row is missing last values
                             rowcopy.append('') # Add empty values so that we get all keys in the zip below
                         csvVarDict[key] = dict(zip(valueKeys, [re.sub(r'^"|"$', '', x.strip()) for x in rowcopy])) # Remove double quotes if these were used
+                        csvVarDict[key][indexKey] = key
                         if lookup:
                             csvVarDict['__LOOKUP__'] = key
 
@@ -96,6 +97,7 @@ def readCsvToDict(csvFilePath, lookup=None, delimiter=','): # v8 - Read CSV data
                             if '__PEER__' in csvVarDict:
                                 exitError("readCsvToDict: CSV file {} intended to have unique peer for variable {}, but 3 found: {}, {}, {}".format(csvFilePath, peerVar, csvVarDict['__LOOKUP__'], csvVarDict['__PEER__'], key))
                             csvVarDict[key] = rowDict
+                            csvVarDict[key][indexKey] = key
                             csvVarDict['__PEER__'] = key
 
     csvVarDict['__INDEX__'] = indexKey
@@ -103,7 +105,7 @@ def readCsvToDict(csvFilePath, lookup=None, delimiter=','): # v8 - Read CSV data
     debug("readCsvToDict() csvVarDict =\n{}".format(json.dumps(csvVarDict, indent=4, sort_keys=True)))
     return csvVarDict
 
-def csvVarLookup(inputStr, csvVarDict, lookup): # v11 - Replaces embedded $<csv-variables> or $(csv-variables) in the input string
+def csvVarLookup(inputStr, csvVarDict, lookup): # v12 - Replaces embedded $<csv-variables> or $(csv-variables) in the input string
     csvVarsUsed = {x.group(1):1 for x in list(re.finditer(r'\$<((?:peer:)?[\w -]+)>', inputStr)) + list(re.finditer(r'\$\(((?:peer:)?[\w -]+)\)', inputStr))}
     outputStr = inputStr
     if csvVarsUsed:
@@ -126,8 +128,10 @@ def csvVarLookup(inputStr, csvVarDict, lookup): # v11 - Replaces embedded $<csv-
                 exitError("csvVarLookup for {}: no CSV file provided but the following variables were found requiring CSV lookup:\n{}".format(lookup, missingVarList))
         for csvVar in csvVarsUsed:
             if re.match(r'peer:', csvVar):
+                debug("csvVarLookup replacing var $<{}> = >{}<".format(csvVar, csvVarDict[csvVarDict['__PEER__']][csvVar.split(":")[1]]))
                 outputStr = re.sub(r'(?:\$<' + csvVar + '>|\$\(' + csvVar + '\))', csvVarDict[csvVarDict['__PEER__']][csvVar.split(":")[1]], outputStr)
             else:
+                debug("csvVarLookup replacing var $<{}> = >{}<".format(csvVar, csvVarDict[lookup][csvVar]))
                 outputStr = re.sub(r'(?:\$<' + csvVar + '>|\$\(' + csvVar + '\))', csvVarDict[lookup][csvVar], outputStr)
         if "\n" in inputStr:
             debug("csvVarLookup input: {}\n{}\n".format(type(inputStr), inputStr))

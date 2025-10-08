@@ -1,6 +1,6 @@
 #
 # CLI functions - (use of rollback requires rollback.py)
-# cli.py v30
+# cli.py v32
 #
 import re
 import time                         # Used by sendCLI_configChain & sendCLI_configChain2 with 'sleep' & 'block directives
@@ -36,7 +36,7 @@ RegexContextPatterns = { # Ported from acli.pl
 RegexExitInstance = re.compile('^ *(?:exit|back|end|config|save)(?:\s|$)')
 RegexEmbeddedErrMode = re.compile('^#error +(fail|stop|continue) *$')
 RegexEmbeddedSleep = re.compile('^#sleep  +(\d+) *$')
-RegexEmbeddedWarpBlock = re.compile('^#block +(start|execute)(?: +(\d+))? *$')
+RegexEmbeddedWarpBlock = re.compile('^#block +(start|execute)(?:(?: +(wait|reconnect))? +(\d+))? *$')
 Indent = 3 # Number of space characters for each indentation
 LastError = None
 LastPrompt = ''
@@ -102,17 +102,17 @@ def formatOutputData(data, mode): # v3 - Formats output data for both sendCLI_sh
         RuntimeError("formatOutputData: invalid scheme type '{}'".format(mode))
     return value
 
-def sendCLI_showCommand(cmd, returnCliError=False, msgOnError=None, retries=0, retryDelay=0): # v3 - Send a CLI show command; return output
+def sendCLI_showCommand(cmd, returnCliError=False, msgOnError=None, retries=0, retryDelay=0): # v4 - Send a CLI show command; return output
     global LastError
     if retries and retryDelay: # To be used on very first CLI command sent to device
         while retries >= 0:
             resultObj = emc_cli.send(cmd)
             # If it fails to connect, the following is automatically printed to the session: "Failed to connect to <IP-address>"
+            emc_results.setStatus(emc_results.Status.STARTED) # Clears failed status on XIQ-SE script/workflow activity
             if resultObj.isSuccess():
-                emc_results.setStatus(emc_results.Status.SUCCESS) # Clears failed status on XIQ-SE script/workflow activity
                 retries = -1 # All good, come out of while loop
             else:
-                print "Retrying in {} seconds".format(retryDelay)
+                printLog("Retrying in {} seconds".format(retryDelay))
                 time.sleep(retryDelay)
                 retries -= 1
     else:
@@ -123,7 +123,7 @@ def sendCLI_showCommand(cmd, returnCliError=False, msgOnError=None, retries=0, r
             if returnCliError: # If we asked to return upon CLI error, then the error message will be held in LastError
                 LastError = outputStr
                 if msgOnError:
-                    print "==> Ignoring above error: {}\n\n".format(msgOnError)
+                    printLog("==> Ignoring above error: {}\n\n".format(msgOnError))
                 return None
             abortError(cmd, outputStr)
         LastError = None
@@ -151,14 +151,14 @@ def sendCLI_showRegex(cmdRegexStr, debugKey=None, returnCliError=False, msgOnErr
         else: debug("sendCLI_showRegex OUT = {}".format(value))
     return value
 
-def sendCLI_configCommand(cmd, returnCliError=False, msgOnError=None, waitForPrompt=True, historyAppend=True): # v5 - Send a CLI config command
+def sendCLI_configCommand(cmd, returnCliError=False, msgOnError=None, waitForPrompt=True, historyAppend=True): # v6 - Send a CLI config command
     global LastError
     cmd = re.sub(r':\/\/', ':' + chr(0) + chr(0), cmd) # Mask any https:// type string
     cmd = re.sub(r' *\/\/ *', r'\n', cmd) # Convert "//" to "\n" for embedded // passwords
     cmd = re.sub(r':\x00\x00', r'://', cmd) # Unmask after // replacemt
     cmdStore = re.sub(r'\n.+$', '', cmd, flags=re.DOTALL) # Strip added "\n"+[yn] or // passwords
     if Sanity:
-        print "SANITY> {}".format(cmd)
+        printLog("SANITY> {}".format(cmd))
         if historyAppend:
             ConfigHistory.append(cmdStore)
         LastError = None
@@ -170,7 +170,7 @@ def sendCLI_configCommand(cmd, returnCliError=False, msgOnError=None, waitForPro
             if returnCliError: # If we asked to return upon CLI error, then the error message will be held in LastError
                 LastError = outputStr
                 if msgOnError:
-                    print "==> Ignoring above error: {}\n\n".format(msgOnError)
+                    printLog("==> Ignoring above error: {}\n\n".format(msgOnError))
                 return False
             abortError(cmd, outputStr)
         if historyAppend:
@@ -216,13 +216,13 @@ def sendCLI_configChain(chainStr, returnCliError=False, msgOnError=None, waitFor
         return False
     return successStatus
 
-def printConfigSummary(): # v4 - Print summary of all config commands executed with context indentation
+def printConfigSummary(): # v5 - Print summary of all config commands executed with context indentation
     global ConfigHistory
     emc_cli.close()
     if not len(ConfigHistory):
-        print "No configuration was performed"
+        printLog("No configuration was performed")
         return
-    print "The following configuration was successfully performed on switch:"
+    printLog("The following configuration was successfully performed on switch:")
     indent = ''
     level = 0
     if Family in RegexContextPatterns:
@@ -230,7 +230,7 @@ def printConfigSummary(): # v4 - Print summary of all config commands executed w
     for cmd in ConfigHistory:
         if Family in RegexContextPatterns:
             if level < maxLevel and RegexContextPatterns[Family][level].match(cmd):
-                print "-> {}{}".format(indent, cmd)
+                printLog("-> {}{}".format(indent, cmd))
                 level += 1
                 indent = ' ' * Indent * level
                 continue
@@ -238,5 +238,5 @@ def printConfigSummary(): # v4 - Print summary of all config commands executed w
                 if level > 0:
                     level -= 1
                 indent = ' ' * Indent * level
-        print "-> {}{}".format(indent, cmd)
+        printLog("-> {}{}".format(indent, cmd))
     ConfigHistory = []

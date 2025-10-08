@@ -1,10 +1,11 @@
 #
 # Read Custom Site Variables (requires apiXmc.py and apiXmcDict.py calls: getDeviceSiteVariables + getSiteVariables)
-# varsSite.py v9
+# varsSite.py v10
 # 
 import re
+import json
 
-def readSiteCustomVariables(deviceIp=None, sitePath=None): # v5 - Obtains a dict of custom site variables starting from sitePath provided or deviceIp
+def readSiteCustomVariables(deviceIp=None, sitePath=None): # v6 - Obtains a dict of custom site variables starting from sitePath provided or deviceIp
     if sitePath:
         siteVariablesHash = nbiQuery(NBI_Query['getSiteVariables'], debugKey='siteVariablesHash', returnKeyError=True, SITE=sitePath)
         debug("readSiteCustomVariables customVariables from sitePath = {}".format(siteVariablesHash))
@@ -93,7 +94,7 @@ def readSiteCustomVariables(deviceIp=None, sitePath=None): # v5 - Obtains a dict
             siteVarDict[varHash["name"]] = value(varHash)
             debug("---> {} = {}".format(varHash["name"], siteVarDict[varHash["name"]]))
 
-    debug("readSiteCustomVariables siteVarDict = {}".format(siteVarDict))
+    debug("readSiteCustomVariables siteVarDict = {}".format(json.dumps(siteVarDict, indent=4, sort_keys=True)))
     return siteVarDict
 
 def siteVarLookup(inputStr, siteVarDict): # v4 - Replaces embedded ${<site-custom-variables>} in the input string

@@ -24,13 +24,14 @@ import argparse
 #
 Debug = False    # Enables debug messages
 Sanity = False   # If enabled, config commands are not sent to host (show commands are operational)
-FuncPath = "C:/Users/lstevens/Scripts/X-Python/XMC/functions" # Path of latest library files
+#FuncPath = "C:/Users/lstevens/Scripts/X-Python/XMC/functions" # Path of latest library files
+FuncPath = "C:/Users/Ludovico/BACKUP/Scripts/X-Python/XMC/functions" # Path of latest library files
 ScriptVersionsFolder = "./versions"
 RegexScriptVersion = re.compile("__version__ *= *'(\d+\.\d+)'")
 RegexLibFile = re.compile('# (\w+\.py)(?: +v(\d+))?')
 RegexFunction = re.compile('def (\w+)\(.*?\): +# +v(\d+)')
 RegexBanner = re.compile('# \w+')
-RegexMain = re.compile('(?:def main\(\):|# Main:|# INIT:)')
+RegexMain = re.compile('(?:def main\(\):|# Main:|# INIT:|# Variables:)')
 BannerLength = 100
 
 
@@ -115,6 +116,7 @@ def getScriptVersions(filePath): # Read input script function versions
     }
     with open(filePath, 'r') as f:
         fileKey = 'orphan'
+        libFileFlag = False
         for line in f:
             scriptVersion = RegexScriptVersion.match(line)
             if scriptVersion:
@@ -125,8 +127,9 @@ def getScriptVersions(filePath): # Read input script function versions
                 #debug("LIBR: {}".format(line))
                 fileKey = libFile.group(1)
                 scriptDict['libfiles'][fileKey] = {'version': libFile.group(2), 'functions': {}}
+                libFileFlag = True
                 continue
-            if RegexBanner.match(line):
+            if not libFileFlag and RegexBanner.match(line):
                 #debug("BANN: {}".format(line))
                 fileKey = 'orphan'
                 continue
@@ -138,6 +141,7 @@ def getScriptVersions(filePath): # Read input script function versions
                 if fileKey == 'orphan' and fileKey not in scriptDict['libfiles']:
                     scriptDict['libfiles'][fileKey] = {'version': None, 'functions': {}}
                 scriptDict['libfiles'][fileKey]['functions'][function.group(1)] = function.group(2)
+                libFileFlag = False
 
     print "\nLibfiles and function versions used by script '{}' version {}".format(os.path.basename(filePath), scriptDict['version'])
     print "=" * BannerLength

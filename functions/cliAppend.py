@@ -1,6 +1,6 @@
 #
 # CLI append to config file functions (requires cli.py)
-# cliAppend.py v6
+# cliAppend.py v7
 #
 AppendBuffer = []
 
@@ -13,7 +13,7 @@ def appendBuffer_add(chainStr): # v1 - Preload AppendBuffer with config or confi
         cmdAdd = re.sub(r'\n.+$', '', cmd) # Strip added CR+y or similar (these are not required when sourcing from file on VOSS and do not work on ERS anyway)
         AppendBuffer.append(cmdAdd)
 
-def appendConfigDotCfg(chainStr=None): # v5 - Appends config commands to config.cfg (before 'end' statement) to be executed after reboot
+def appendConfigDotCfg(chainStr=None): # v6 - Appends config commands to config.cfg (before 'end' statement) to be executed after reboot
     global LastError
     if Family != 'VSP Series':
         exitError('appendConfigDotCfg(): only supported with "VSP Series" family type')
@@ -22,7 +22,7 @@ def appendConfigDotCfg(chainStr=None): # v5 - Appends config commands to config.
         appendBuffer_add(chainStr)
     if Sanity:
         for cmd in AppendBuffer:
-            print "SANITY(appended to config.cfg)> {}".format(cmd)
+            printLog("SANITY(appended to config.cfg)> {}".format(cmd))
             ConfigHistory.append('[after reboot] ' + cmd)
         LastError = None
         return True
@@ -39,7 +39,7 @@ def appendConfigDotCfg(chainStr=None): # v5 - Appends config commands to config.
             abortError(cmd, outputStr)
         else:
             for cmd in AppendBuffer:
-                print "Added to config.cfg: {}".format(cmd)
+                printLog("Added to config.cfg: {}".format(cmd))
                 ConfigHistory.append('[after reboot] ' + cmd)
             LastError = None
             AppendBuffer = []

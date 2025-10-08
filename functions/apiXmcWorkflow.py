@@ -1,11 +1,11 @@
 #
 # Workflow execution functions (requires apiXmc.py and apiXmcDict.py calls: getWorkflowIds + executeWorkflow + getWorkflowExecutionStatus)
-# apiXmcWorkflow.py v6
+# apiXmcWorkflow.py v7
 #
 import re
 import json
 
-def getWorkflowId(worflowPathName): # v1 - Returns the workflow id, or None if it does not exist or cannot be found
+def getWorkflowId(worflowPathName): # v2 - Returns the workflow id, or None if it does not exist or cannot be found
                                     # Syntax: workflowExists("Provisioning/Onboard VSP")
     # Get the name and category separately
     worflowCategory, worflowName = worflowPathName.split('/') 
@@ -13,10 +13,10 @@ def getWorkflowId(worflowPathName): # v1 - Returns the workflow id, or None if i
     # Get full list of workflows and their ids
     workflowsList = nbiQuery(NBI_Query['getWorkflowIds'], debugKey='workflowsList', returnKeyError=True)
     if LastNbiError:
-        print "getWorkflowId() unable to extract workflowList; query:\n{}\nFailed with: {}".format(NBI_Query['getWorkflowIds'], LastNbiError)
+        printLog("getWorkflowId() unable to extract workflowList; query:\n{}\nFailed with: {}".format(NBI_Query['getWorkflowIds'], LastNbiError))
         return None
     if not workflowsList:
-        print "getWorkflowId() unable to extract workflowList; query:\n{}\nReturned None".format(NBI_Query['getWorkflowIds'])
+        printLog("getWorkflowId() unable to extract workflowList; query:\n{}\nReturned None".format(NBI_Query['getWorkflowIds']))
         return None
     # Make a Dict of workflow names (keys) for workflow ids (values)
     worflowId = None
@@ -24,13 +24,13 @@ def getWorkflowId(worflowPathName): # v1 - Returns the workflow id, or None if i
     for wrkfl in workflowsList:
         if worflowCategory == wrkfl['category'] and worflowName == wrkfl['name']:
             if worflowId:
-                print "getWorkflowId() duplicate workflow '{}' found in paths: {} and {}".format(worflowName, workflowPath, wrkfl['path'])
+                printLog("getWorkflowId() duplicate workflow '{}' found in paths: {} and {}".format(worflowName, workflowPath, wrkfl['path']))
                 return None
             worflowId = wrkfl['id']
             workflowPath = wrkfl['path']
     debug("getWorkflowId() workflowId = {}".format(worflowId))
     if not worflowId:
-        print "getWorkflowId() workflow '{}' in category '{}' not found".format(worflowName, worflowCategory)
+        printLog("getWorkflowId() workflow '{}' in category '{}' not found".format(worflowName, worflowCategory))
         return None
     return worflowId
 
