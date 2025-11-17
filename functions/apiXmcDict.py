@@ -684,6 +684,18 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                 ''',
         'key': 'allPolicyMappingEntries'
     },
+    'getNacGroupType': {
+        'json': '''
+                {
+                  accessControl {
+                    group(name: "<GROUPNAME>") {
+                      GetType
+                    }
+                  }
+                }
+                ''',
+        'key': 'group' # None | { "GetType": "LOCATION" }
+    },
 
 
 
@@ -1428,6 +1440,7 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                       radiusAccountingEnabled: true,
                       overrideSharedSecret: true,
                       sharedSecret: "<SHAREDSECRET>"
+                      requireMAForSwitchEnabled: <MSGAUTHATTR>
                     }) {
                       message
                       status
@@ -1520,6 +1533,8 @@ NBI_Query = { # GraphQl query / outValue = nbiQuery(NBI_Query['getDeviceUserData
                     createGroup(input: {
                       name: "<LOCATIONGROUP>"
                       type: LOCATION
+                      mode:DEFAULT
+                      description: "<DESCRIPTION>"
                     }) {
                       status
                       message

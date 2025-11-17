@@ -1,6 +1,6 @@
 #
 # Parsing of config template for #if/#elseif/#else/#end velocity type statements & #eval/#last
-# cliVelocityParsing.py v12
+# cliVelocityParsing.py v13
 #
 import re
 RegexEmbeddedIfElse  = re.compile('^[ \t]*#(if|elseif|else|end) *(?:\((.+?)\) *$|(\S+))?')
@@ -29,7 +29,7 @@ def preParseIfElseBlocks(config): # v5 - Pre-parses config for embedded ${}/$<>/
     debug("preParseIfElseBlocks finalConfig:\n{}\n".format(finalConfig))
     return finalConfig
 
-def parseIfElseBlocks(config): # v8 - Parses config for embedded #if/#elseif/#else/#end velocity type statements
+def parseIfElseBlocks(config): # v9 - Parses config for embedded #if/#elseif/#else/#end velocity type statements
 
     def replaceEvalString(match):
         try:
@@ -56,7 +56,7 @@ def parseIfElseBlocks(config): # v8 - Parses config for embedded #if/#elseif/#el
         'includeLines'       : True,  # Only if true do we append config lines
         'ifMatch'            : False, # Keeps track if a match has occurred
         'expectedStatements' : [],    # Expected next if/elseif/else/end statements
-        'active'             : True,  # Will be False for nexted if-end blocks in sections being skipped
+        'active'             : True,  # Will be False for nested if-end blocks in sections being skipped
     }
     lastFlag = False
     waitForPromptLastLine = True
@@ -71,7 +71,7 @@ def parseIfElseBlocks(config): # v8 - Parses config for embedded #if/#elseif/#el
             if invalidArg:
                 exitError("Error parsing config file line number {}: invalid syntax for statement '#{}'".format(lineNumber, statement))
             condition = False
-            if ifDict['includeLines']:
+            if ifDict['active']:
                 if evalString:
                     evalString = re.sub(RegexEmbeddedEvalVar, evalVarReplace, evalString) # Replaces embedded $[<eval-variable>] in evalString
                 try:

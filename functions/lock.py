@@ -1,6 +1,6 @@
 #
 # Lock functions (based on Markus Nikulski's shareData() function)
-# lock.py v9
+# lock.py v11
 #
 import os
 import time
@@ -22,7 +22,7 @@ def exitLockError(errorOutput, sleep=ExitErrorSleep): # v1 - Same as exitError()
         yieldLock()
     exitError(errorOutput, sleep)
 
-def returnContextDir(workflow, activity, script, execid, username, custom): # v2 - returns the context directory to use
+def returnContextDir(workflow=False, activity=False, script=False, execid=False, username=False, custom=None): # v3 - returns the context directory to use
     context = ''
     if username:
         context += '.' + emc_vars["userName"].replace('.', '_').replace('@', '_')
@@ -210,10 +210,13 @@ def shareData(context, newData=None, purge=False): # v3 - Allows to read, store 
 
     return shareData
 
-def readDataNoLock(context, workflow=False, activity=False, script=False, execid=False, username=False, custom=None): # v2 - Allows to read data without a lock
+def readDataNoLock(context, workflow=False, activity=False, script=False, execid=False, username=False, custom=None): # v3 - Allows to read data without a lock
     # Holding a lock when reading data is only necessary to avoid reading while someone else is writing the data
     # But if there is no chance of a write happening, then no need for tasks to grab a lock to read
-    contextDir = returnContextDir(workflow, activity, script, execid, username, custom)
+    if not (workflow or activity or script or execid or username or custom):
+        contextDir = returnContextDir(workflow=True, execid=True)
+    else:
+        contextDir = returnContextDir(workflow, activity, script, execid, username, custom)
     shareFile = contextDir + "/{}.json".format(context)
     debug("readDataNoLock() shareFile = {}".format(shareFile))
 

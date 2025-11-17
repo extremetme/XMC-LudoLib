@@ -800,8 +800,10 @@ CLI_Dict = {
         'get_mac_address'            : 'show switch||^System MAC: +(\S+)',
         'get_mgmt_ip_mask'           : 'int://show vlan | include {0}||{0} +\/(\d\d?) ', # IP address
         'get_mgmt_vlan_and_mask'     : 'tuple://show vlan | include {0}||(\d+) +{0} *\/(\d\d?) ', # IP address
-        'get_mirror_ean_to_from_ip'  : 'list-diagonal://show mirror EAN ||(?:\((Enabled|Disabled)\)|Mirror to remote IP: (\d+\.\d+\.\d+\.\d+) |From IP +: (\d+\.\d+\.\d+\.\d+) )', # returns: state, destIP, fromIP
+        'get_mirror_ean_to_from_ip'  : 'list-diagonal://show mirror EAN ||(?:\((Enabled|Disabled)\)|Mirror to remote IP: (\d+\.\d+\.\d+\.\d+) |From IP +: (\d+\.\d+\.\d+\.\d+|Auto source IP) )', # returns: state, destIP, fromIP
         'get_mlt_data'               : 'list://show sharing||^ +(?:((?:\d+:)?\d+)(?: +(?:\d+:)?\d+)? +(LACP|Static) +\d+ +)?\w+(?: +\w+)? +((?:\d+:)?\d+)',
+        'get_port_fa_auth'           : 'dict://show fabric attach ports||^(\d+(?::\d+(?::\d+)?)?) +\S+ +\S+ +(Disabled|Enabled)',
+        'get_ports_list'             : 'list://show ports information port-number||^(\d+(?::\d+(?::\d+)?)?) +',
         'get_running_config'         : 'show configuration',
         'get_software_version'       : 'str://show version ||^Image +: .+ version ([\d\.]+)[ -]', # If version 32.7.1.9-patch1-49, will return only 32.7.1.9
         'get_static_vlan_isids'      : 'dict-both://show fabric attach assignments||^(?:\d[\d:]*)? +(\d+) +\S+ +Static +(\d+) ',
@@ -810,12 +812,15 @@ CLI_Dict = {
         'get_vm_data'                : 'list://show vm detail | include Memory|CPUs|Slot||(?:Memory size: +(\d+) MB|CPUs: +(\d)|Slot: +(\d))',
 
         'list_all_vlans'             : 'dict-reverse://show vlan ||^(\S+) +(\d+) ',
-        'list_fa_elements'           : 'list://show fabric attach elements||^((?:[\da-f]{2}-){5}[\da-f]{2})-((?:[\da-f]{2}-){3}[\da-f]{2}) +((?:\d+:)?\d+) +(.+?) +(?:\d+|None)\s\S',
+#        'list_fa_elements'           : 'list://show fabric attach elements||^((?:[\da-f]{2}-){5}[\da-f]{2})-((?:[\da-f]{2}-){3}[\da-f]{2}) +((?:\d+:)?\d+) +(.+?) +(?:\d+|None)\s\S',
+        'list_fa_elements'           : 'dict://show fabric attach elements||^\S+ +(\d+(?::\d+(?::\d+)?)?) +(\S+)',
         'list_ip_interface_data'     : 'list://show vlan | exclude VR-Mgmt||^(\S+) +\d+ +(\d+\.\d+\.\d+\.\d+) *\/(\d\d?) ',
 
         'port_add_vlan_tagged'       : 'configure vlan {} add ports {} tagged', # VLAN id, Ports
         'port_add_vlan_untagged'     : 'configure vlan {} add ports {} untagged', # VLAN id, Ports
         'port_disable_poe'           : 'disable inline-power ports {}', # Port list
+        'port_enable_fa_auth'        : 'configure fabric attach ports {} authentication enable', # Ports
+        'port_custom_fa_auth_key'    : 'configure fabric attach ports {} authentication key {}', # Ports, Key
         'port_enable_poe'            : 'enable inline-power ports {}', # Port list
 
         'set_cvlan_isid'             : 'configure vlan {0} add isid {1}', # {0} = VLAN id; {1} = i-sid 

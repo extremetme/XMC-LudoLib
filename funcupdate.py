@@ -24,8 +24,7 @@ import argparse
 #
 Debug = False    # Enables debug messages
 Sanity = False   # If enabled, config commands are not sent to host (show commands are operational)
-#FuncPath = "C:/Users/lstevens/Scripts/X-Python/XMC/functions" # Path of latest library files
-FuncPath = "C:/Users/Ludovico/BACKUP/Scripts/X-Python/XMC/functions" # Path of latest library files
+FuncPath = "C:/Users/lstevens/Scripts/X-Python/XMC/functions" # Path of latest library files
 ScriptVersionsFolder = "./versions"
 RegexScriptVersion = re.compile("__version__ *= *'(\d+\.\d+)'")
 RegexLibFile = re.compile('# (\w+\.py)(?: +v(\d+))?')

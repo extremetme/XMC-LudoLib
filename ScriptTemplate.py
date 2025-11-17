@@ -65,6 +65,12 @@ Debug = False    # Enables debug messages
 Sanity = False   # If enabled, config commands are not sent to host (show commands are operational)
 
 
+#
+# IMPORTS:
+#
+from distutils.version import LooseVersion
+
+
 
 # --> Insert required functions <--
 

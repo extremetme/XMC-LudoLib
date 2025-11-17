@@ -90,11 +90,12 @@ Family = 'Summit Series'
 
 
 # Testing ACT logic
-configFile='GSS-Template.txt'
-serialNumber         = '2128Q-40044'
-csvFile='mgmtdata.csv'
-lookup               = serialNumber
-csvVarDict       = readCsvToDict(csvFile, lookup)
+#configFile='GSS-Template.txt'
+configFile='template.test'
+#serialNumber         = '2128Q-40044'
+#csvFile='mgmtdata.csv'
+#lookup               = serialNumber
+#csvVarDict       = readCsvToDict(csvFile, lookup)
 #csvVarDict = {
 #    "SB012105G-00040": {
 #        "locId": "015", 
@@ -113,7 +114,7 @@ siteVarDict = {
     "__PATH__": "/World/Branches-A", 
     "date": "06/28/2025 11:29:56 AM", 
     "deviceIP": "10.0.1.1", 
-    "deviceName": "BN-A1", 
+    "deviceName": "BN-A3", 
     "deviceNosId": "nos-id-fabric-engine", 
     "deviceSysOid": "1.3.6.1.4.1.1916.2.437", 
     "deviceType": "5520-24T-FabricEngine", 
@@ -123,7 +124,7 @@ siteVarDict = {
 }
 
 
-sys.exit(0)
+#sys.exit(0)
 
 
 
@@ -143,7 +144,7 @@ config = preParseIfElseBlocks(config)
 # Parse the template for Global/Site variables : ${variable}
 config = siteVarLookup(config, siteVarDict)
 # Parse the template for CSV variables : $<csvVariable>
-config = csvVarLookup(config, csvVarDict, lookup)
+#config = csvVarLookup(config, csvVarDict, lookup)
 # Parse the template for Device UserData1-4 variables: $UD1-4
 #config = udVarLookup(config, udVarList)
 # Force config back to string (becomes unicode after above replacements)
