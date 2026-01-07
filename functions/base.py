@@ -1,14 +1,14 @@
 #
 # Base functions
-# base.py v12
+# base.py v13
 #
 import re                           # Used by scriptName
 import time                         # Used by debug & exitError
 ExitErrorSleep = 10
 DebugLogger = None
 
-def printLog(message): # v1 - Print message to stdout but also into debug log file
-    if DebugLogger:
+def printLog(message=""): # v2 - Print message to stdout but also into debug log file
+    if DebugLogger and message:
         DebugLogger.info(message)
     else:
         print message

@@ -1,6 +1,6 @@
 #
 # Parsing of config template for #if/#elseif/#else/#end velocity type statements & #eval/#last
-# cliVelocityParsing.py v13
+# cliVelocityParsing.py v15
 #
 import re
 RegexEmbeddedIfElse  = re.compile('^[ \t]*#(if|elseif|else|end) *(?:\((.+?)\) *$|(\S+))?')
@@ -29,7 +29,7 @@ def preParseIfElseBlocks(config): # v5 - Pre-parses config for embedded ${}/$<>/
     debug("preParseIfElseBlocks finalConfig:\n{}\n".format(finalConfig))
     return finalConfig
 
-def parseIfElseBlocks(config): # v9 - Parses config for embedded #if/#elseif/#else/#end velocity type statements
+def parseIfElseBlocks(config, siteVarDict, csvVarDict, lookup, udVarList=None): # v11 - Parses config for embedded #if/#elseif/#else/#end velocity type statements
 
     def replaceEvalString(match):
         try:
@@ -48,6 +48,22 @@ def parseIfElseBlocks(config): # v9 - Parses config for embedded #if/#elseif/#el
         if match.group(1) not in evalVarDict:
             exitError("evalVarReplace: the following eval variable in line {} was not found: $[{}]".format(lineNumber, match.group(1)))
         return evalVarDict[match.group(1)]
+
+    def derefVariables(section):
+        section = siteVarLookup(section, siteVarDict) # Replaces embedded ${variable}
+        section = csvVarLookup(section, csvVarDict, lookup) # Replaces embedded $<variable>
+        if udVarList:
+            section = udVarLookup(section, udVarList) # Replaces embedded $UD1-4
+        section = re.sub(RegexEmbeddedEvalVar, evalVarReplace, section) # Replaces embedded $[eval-variable]
+        return str(section)
+
+    def evalCondition(evalString):
+        evalString = derefVariables(evalString)
+        try:
+            condition = bool(eval(evalString, {})) if evalString else False
+        except Exception as err:
+            exitError("Error parsing config file line number {}: cannot Python eval({}) conditional\nError: {}".format(lineNumber, evalString, err))
+        return condition, evalString
 
     evalVarDict = {}
     parsedConfig = []
@@ -70,42 +86,36 @@ def parseIfElseBlocks(config): # v9 - Parses config for embedded #if/#elseif/#el
             invalidArg = regexMatch.group(3)
             if invalidArg:
                 exitError("Error parsing config file line number {}: invalid syntax for statement '#{}'".format(lineNumber, statement))
-            condition = False
-            if ifDict['active']:
-                if evalString:
-                    evalString = re.sub(RegexEmbeddedEvalVar, evalVarReplace, evalString) # Replaces embedded $[<eval-variable>] in evalString
-                try:
-                    condition = bool(eval(evalString, {})) if evalString else False
-                except Exception as err:
-                    exitError("Error parsing config file line number {}: cannot Python eval({}) conditional\nError: {}".format(lineNumber, evalString, err))
             if statement == "if":
                 if ifDict['expectedStatements']: # Nested IF block
                     ifDictStack.append(ifDict.copy())
                     ifDict['active'] = True if ifDict['includeLines'] else False
                 ifDict['expectedStatements'] = ["elseif", "else", "end"]
                 if ifDict['active']:
+                    condition, evalString = evalCondition(evalString)
                     if condition == True:
                         ifDict['ifMatch'] = True
                         ifDict['includeLines'] = True
                     else:
                         ifDict['ifMatch'] = False
                         ifDict['includeLines'] = False
-                    debug("parseIfElseBlocks line{} IF    : {}\neval({}) = {}\nnesting = {}, blockData = {}\n".format(lineNumber, line, evalString, condition, len(ifDictStack), ifDict))
+                    debug("parseIfElseBlocks line{} IF    : {}\n- eval({}) = {}\n- nesting = {}\n- blockData = {}\n".format(lineNumber, line, evalString, condition, len(ifDictStack), ifDict))
                 else:
-                    debug("parseIfElseBlocks line{} IF    : {}\nnesting = {}, blockData = {}\n".format(lineNumber, line, len(ifDictStack), ifDict))
+                    debug("parseIfElseBlocks line{} IF    : {}\n- nesting = {}\n- blockData = {}\n".format(lineNumber, line, len(ifDictStack), ifDict))
                 continue
             elif statement not in ifDict['expectedStatements']:
                 exitError("Error parsing config file line number {}: found unexpected statement '#{}'".format(lineNumber, statement))
             elif statement == "elseif":
                 if ifDict['active']:
+                    condition, evalString = evalCondition(evalString)
                     if ifDict['ifMatch'] == False and condition == True:
                         ifDict['ifMatch'] = True
                         ifDict['includeLines'] = True
                     else:
                         ifDict['includeLines'] = False
-                    debug("parseIfElseBlocks line{} ELSEIF: {}\neval({}) = {}\nnesting = {}, blockData = {}\n".format(lineNumber, line, evalString, condition, len(ifDictStack), ifDict))
+                    debug("parseIfElseBlocks line{} ELSEIF: {}\n- eval({}) = {}\n- nesting = {}\n- blockData = {}\n".format(lineNumber, line, evalString, condition, len(ifDictStack), ifDict))
                 else:
-                    debug("parseIfElseBlocks line{} ELSEIF: {}\nnesting = {}, blockData = {}\n".format(lineNumber, line, len(ifDictStack), ifDict))
+                    debug("parseIfElseBlocks line{} ELSEIF: {}\n- nesting = {}\n- blockData = {}\n".format(lineNumber, line, len(ifDictStack), ifDict))
                 continue
             elif statement == "else":
                 if evalString:
@@ -113,7 +123,7 @@ def parseIfElseBlocks(config): # v9 - Parses config for embedded #if/#elseif/#el
                 if ifDict['active']:
                     ifDict['includeLines'] = True if ifDict['ifMatch'] == False else False
                 ifDict['expectedStatements'] = ["end"]
-                debug("parseIfElseBlocks line{} ELSE  : {}\nnesting = {}, blockData = {}\n".format(lineNumber, line, len(ifDictStack), ifDict))
+                debug("parseIfElseBlocks line{} ELSE  : {}\n- nesting = {}\n- blockData = {}\n".format(lineNumber, line, len(ifDictStack), ifDict))
                 continue
             elif statement == "end":
                 if evalString:
@@ -121,7 +131,7 @@ def parseIfElseBlocks(config): # v9 - Parses config for embedded #if/#elseif/#el
                 if ifDict['active']:
                     ifDict['includeLines'] = True
                 ifDict['expectedStatements'] = []
-                debug("parseIfElseBlocks line{} END   : {}\nnesting = {}, blockData = {}\n".format(lineNumber, line, len(ifDictStack), ifDict))
+                debug("parseIfElseBlocks line{} END   : {}\n- nesting = {}\n- blockData = {}\n".format(lineNumber, line, len(ifDictStack), ifDict))
                 if ifDictStack: # Nested IF block
                     ifDict = ifDictStack.pop()
                 continue
@@ -130,7 +140,7 @@ def parseIfElseBlocks(config): # v9 - Parses config for embedded #if/#elseif/#el
         if ifDict['includeLines']:
             if not line: # Skip empty lines
                 continue
-            line = re.sub(RegexEmbeddedEvalVar, evalVarReplace, line) # Replaces embedded $[<eval-variable>] in line
+            line = derefVariables(line)
             debug("parseIfElseBlocks line{} retaining: {}".format(lineNumber, line))
             if RegexEmbeddedLast.match(line):
                 lastFlag = True

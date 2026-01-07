@@ -114,12 +114,12 @@ def main():
 
 
     # Display all input data
-    printLog
+    printLog()
     printLog("Input Data:")
     printLog(" - Selected Switch IP = {}".format(ipAddress))
     printLog(" - CLI retries = {}".format(cliRetries))
     printLog(" - CLI retry delay = {}".format(cliRetryDelay))
-    printLog
+    printLog()
 
 
     # Disable more paging

@@ -82,8 +82,8 @@ Sanity = False
 
 
 #Family = 'ERS Series'
-#Family = 'VSP Series'
-Family = 'Summit Series'
+Family = 'VSP Series'
+#Family = 'Summit Series'
 #Family = 'ISW-Series'
 #Family = 'ISW-Series-Marvell'
 
@@ -91,42 +91,48 @@ Family = 'Summit Series'
 
 # Testing ACT logic
 #configFile='GSS-Template.txt'
-configFile='template.test'
-#serialNumber         = '2128Q-40044'
+#configFile='template.test'
+configFile='JeffD-Template.txt'
+serialNumber         = '2002F-20096'
 #csvFile='mgmtdata.csv'
-#lookup               = serialNumber
+lookup               = serialNumber
 #csvVarDict       = readCsvToDict(csvFile, lookup)
-#csvVarDict = {
-#    "SB012105G-00040": {
-#        "locId": "015", 
-#        "mgmtClip": "10.15.0.1", 
-#        "nodeId": "01", 
-#        "nodeType": "disti", 
-#        "siteName": "/World/CMPa", 
-#        "sysName": "CMPa-421"
-#    }, 
-#    "__INDEX__": "Serial Number", 
-#    "__LOOKUP__": "SB012105G-00040", 
-#    "__PATH__": "/root/SG-Nodes/NewNodesData.csv"
-#}
-
-siteVarDict = {
-    "__PATH__": "/World/Branches-A", 
-    "date": "06/28/2025 11:29:56 AM", 
-    "deviceIP": "10.0.1.1", 
-    "deviceName": "BN-A3", 
-    "deviceNosId": "nos-id-fabric-engine", 
-    "deviceSysOid": "1.3.6.1.4.1.1916.2.437", 
-    "deviceType": "5520-24T-FabricEngine", 
-    "family": "Universal Platform Fabric Engine", 
-    "serverIP": "10.255.254.1", 
-    "serverName": "scjgssxiqse.scjgss.go.jp"
+csvVarDict = {
+    "2002F-20096": {
+        "Serial Number": "2002F-20096", 
+        "location": "Home - Garage", 
+        "mgmt gateway": "10.13.254.1", 
+        "mgmt ip": "10.13.254.104", 
+        "mgmt isid": "1130454", 
+        "mgmt mask": "255.255.255.0", 
+        "mgmt vlanid": "454", 
+        "policy domain": "Home Domain", 
+        "policy island": "Garage", 
+        "site name": "/World/Dattilio Enterprises/Garage", 
+        "sysname": "1599-Garage-SW1", 
+        "vist isid": ""
+    }, 
+    "__INDEX__": "Serial Number", 
+    "__LOOKUP__": "2002F-20096", 
+    "__PATH__": "/home/netsight/provisioning/JeffD-Switches.csv"
 }
 
+siteVarDict = {
+    "__PATH__": "/World/Dattilio Enterprises/Garage", 
+    "date": "12/02/2025 03:50:04 PM", 
+    "deviceIP": "10.13.254.104", 
+    "deviceName": "SW-1599-G-01", 
+    "deviceNosId": "nos-id-voss", 
+    "deviceSysOid": "1.3.6.1.4.1.1916.2.324", 
+    "deviceType": "VSP-4900-48P", 
+    "family": "VSP Series", 
+    "serverIP": "10.13.254.3", 
+    "serverName": "XIQ-SE-Prod.home.tilnet.us"
+}
+
+udVarList = [None, None, None, None]
 
 #sys.exit(0)
-
-
 
 try:
     with open(configFile, 'r') as f:
@@ -142,15 +148,15 @@ print config
 # Pre-parse the template for lines with #if/#elseif/#else/#end velocity type statements, and pre-quote any variables used in there
 config = preParseIfElseBlocks(config)
 # Parse the template for Global/Site variables : ${variable}
-config = siteVarLookup(config, siteVarDict)
+#config = siteVarLookup(config, siteVarDict)
 # Parse the template for CSV variables : $<csvVariable>
 #config = csvVarLookup(config, csvVarDict, lookup)
 # Parse the template for Device UserData1-4 variables: $UD1-4
 #config = udVarLookup(config, udVarList)
 # Force config back to string (becomes unicode after above replacements)
-config = str(config)
+#config = str(config)
 # Parse for #if/#elseif/#else/#end velocity type statements
-config, flag = parseIfElseBlocks(config)
+config, flag = parseIfElseBlocks(config, siteVarDict, csvVarDict, lookup, udVarList)
 print
 print "Final config to push:"
 print "====================="

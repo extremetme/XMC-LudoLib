@@ -1,0 +1,43 @@
+# Name
+<name>
+
+# Description
+#
+<decription>
+
+
+<Activity>_01
+	<description>
+
+
+# Input Variables
+#
+input_sanityDebugNotes
+userInput_debug
+userInput_sanity
+	
+input_notes
+
+
+# Workflow Variables
+#
+wrkfl_VERSION
+
+
+# Constants which can be changed
+#
+const_VSP_MIN_SW_VERSION	string	8.5.0.0
+const_PING_NEW_IP_TIMEOUT	number	20
+const_AGGRESSIVE_SAVE		boolean	false
+const_EXPORT_EMC_VARS		json	["deviceIP","deviceName","deviceSysOid","deviceType","family","serverIP","serverName","date","deviceNosId"]
+const_CLI_RETRIES		number	6
+const_CLI_RETRY_DELAY		number	10
+
+
+# Inputs
+# (to get the right order; if entered consecutively, start from bottom; else from top, but OK out and back in, for next addition)
+<--------------max length-------------->
+Notes						Textarea						input_notes					<blah blah>
+Sanity and Debug Notes				Textarea						input_sanityDebugNotes				Sanity: enable if you do not trust this workflow and wish to first see what it does. In sanity mode configuration changes are not actually made. Debug: enable if you need to report a problem to the script author.
+Sanity						ComboBox	enable,disable				userInput_sanity			prompt
+Debug						ComboBox	enable,disable				userInput_debug				prompt

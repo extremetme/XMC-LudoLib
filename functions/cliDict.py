@@ -495,6 +495,7 @@ CLI_Dict = {
         'get_figw_image_file_size'   : 'str://ls {1}{0}||(\d\d\d\d\d+) +\S+ +\S+ +\S+ +{0} *$', # Filename, Path
         'get_figw_save_files'        : 'list://virtual-service {} exec-command "ls {}"||^(\S+)$', # FIGW VM name, FIGW local file system path
         'get_flex_uni'               : 'dict://show interfaces gigabitEthernet config {}||^(\d+/\d+(?:/\d+)?) +\S+ +\S+ +\S+ +\S+ +\S+ +(Enable|Disable)', # Port
+        'get_flex_uni_ports'         : 'list://show interfaces gigabitEthernet config||^(\d+/\d+(?:/\d+)?) +\S+ +\S+ +\S+ +\S+ +\S+ +Enable',
         'get_mgmt_ip_mask'           : 'int://show mgmt ip||{}/(\d\d?) ', # IP address
         'get_mgmt_default_gateway'   : 'str://show mgmt ip route||^0\.0\.0\.0/0 +(\d+\.\d+\.\d+\.\d+) ',
         'get_mgmt_gateway_mac'       : 'str://show mgmt ip arp||^{} +\S+ +([\da-f:]+) ', # Gateway IP
@@ -519,6 +520,7 @@ CLI_Dict = {
         'get_isis_ip_clip'           : 'str://show interfaces loopback||^(\d+) +{}\s', # ISIS Source IP
         'get_l3vsn_vrf_name_pre83'   : 'str://show ip ipvpn||^\s+VRF Name\s+: (\S+)\n(?:\s+(?:Ipv[46] )?Ipvpn-state\s+: \w+\n)*\s+I-sid\s+: {}', # L3 I-SID
         'get_l3vsn_vrf_name'         : 'str://show ip ipvpn||^(\S+) +\d+ +\S+ +(?:\S+ +)?{}', # L3 I-SID
+        'get_lacp_port_data'         : 'list://show lacp actor-oper interface||^(\d+/\d+(?:/\d+)?) +(\d+) +\d+ +\d+ +(true|false)',
         'get_lacp_smlt_mac'          : 'str://show lacp||SmltSystemId: +(\w\w:\w\w:\w\w:\w\w:\w\w:\w\w)',
         'get_mac_address'            : 'str://show sys-info||BaseMacAddr +: +(\S+)',
         'get_4k_brouter_vlans'       : 'list://show brouter||^\s*\d+/\d+(?:/\d+)? +(4\d{3})',
@@ -560,6 +562,8 @@ CLI_Dict = {
         'list_fe_tunnels_dest'       : 'dict://show isis logical-interface||^(\d+) +\S.*\S +IP +-- +-- +(\d+\.\d+\.\d+\.\d+) ',
 #        'list_fe_tunnels_name'       : 'dict://show isis logical-interface name||^(\d+) +(\S.*\S)',
         'list_fe_tunnels_name'       : 'dict-reverse://show isis logical-interface name||^(\d+) +(\S.*\S)',
+        'list_flex_uni_isid'         : 'dict://show interface gigabitEthernet i-sid {}||^(\d+/\d+(?:/\d+)?) +\S+ +(\d+) +\S+ + (untag|\d+)', # Ports
+        'list_flex_uni_untag_isid'   : 'dict://show interface gigabitEthernet i-sid {}||^(\d+/\d+(?:/\d+)?) +\S+ +(\d+) +\S+ + untag', # Ports
         'list_ip_interface_data'     : 'list://show ip interface vrfids 0-511||^(Vlan\d+|Port\d+\/\d+) +(\d+\.\d+\.\d+\.\d+) +(\d+\.\d+\.\d+\.\d+) +\S+ +(?:up|down) +\S+ +(?:true|false) +\S+ +(.*)',
         'list_isis_areas'            : 'dict-reverse://show isis area||^([\da-f]+(?:\.[\da-f]+)+) +\S+ +(HOME|REMOTE)',
         'list_l3vsn_vrf_names_pre83' : 'dict-both://show ip ipvpn||^\s+VRF Name\s+: (\S+)\n(?:\s+(?:Ipv[46] )?Ipvpn-state\s+: \w+\n)*\s+I-sid\s+: (\S+)',
@@ -572,6 +576,7 @@ CLI_Dict = {
         'list_mgmt_interfaces'       : 'list://show mgmt interface||^\d +\S+ +([A-Z]+) ',
         'list_mgmt_ips'              : 'dict://show mgmt ip||^\d +(\S+) +(\d+\.\d+\.\d+\.\d+)/\d',
         'list_mlt_lacp_key'          : 'dict://show lacp interface mlt||^(\d+) +\d+ +\d+ +\S+ +\d+ +(\d+)',
+        'list_nni_interfaces'        : 'list://show isis interface||^(?:Mlt|Port)(\d+(?:/\d+(?:/\d+)?)?) +',
         'list_ntp_servers'           : 'list://show ntp server ||^(\d+\.\d+\.\d+\.\d+)',
         'list_oob_mgmt_ips'          : 'list://show ip interface vrfids 512||^(?:Portmgm\d?|MgmtVirtIp|mgmt-oob) +(\d+\.\d+\.\d+\.\d+)',
         'list_poe_delivering_ports'  : 'list://show poe-port-status||^(\d+/\d+(?:/\d+)?) +Enable +DeliveringPower',

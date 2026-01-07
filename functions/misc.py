@@ -837,3 +837,12 @@ def suppressGarbage(responseText): # v2 - Written to handle garbage unicode char
             printLog(u"\nWARNING: Suppressing garbage at the end of HTTP response text :{}\n".format(garbageMatch.group(1)))
             return re.sub(r'(?<=[\}\]])[^\}\]]+$', '', responseText) # In the bin!
     return responseText
+
+def touch(path): # v2 - Touches a file (and sets its modify time)
+    try:
+        with open(path, 'a'):
+            os.utime(path, None)
+            debug("Touch() file : {}".format(path))
+    except Exception as e: # Expect IOError
+        printLog("{}: {}".format(type(e).__name__, str(e)))
+        exitError("Unable to touch file '{}'".format(path))
